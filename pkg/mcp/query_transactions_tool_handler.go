@@ -40,7 +40,8 @@ type MCPQueryTransactionsResponse struct {
 
 // MCPTransactionInfo defines the structure of transaction information
 type MCPTransactionInfo struct {
-	Time                   string `json:"time,omitempty" jsonschema_description:"Time of the transaction in RFC 3339 format (e.g. 2023-01-01T12:00:00Z)"`
+	Id                     string `json:"id,omitempty" jsonschema_description:"Transaction id, use it with update_transaction"`
+	Time                  string `json:"time,omitempty" jsonschema_description:"Time of the transaction in RFC 3339 format (e.g. 2023-01-01T12:00:00Z)"`
 	Type                   string `json:"type" jsonschema:"enum=income,enum=expense,enum=transfer,enum=balance_modification" jsonschema_description:"Transaction type (income, expense, transfer, balance_modification)"`
 	Amount                 string `json:"amount" jsonschema_description:"Amount of the transaction in the specified currency"`
 	Currency               string `json:"currency,omitempty" jsonschema_description:"Currency code of the transaction (e.g. USD, EUR)"`
@@ -207,6 +208,7 @@ func (h *mcpQueryTransactionsToolHandler) createNewMCPQueryTransactionsResponse(
 	for i := 0; i < len(transactions); i++ {
 		transaction := transactions[i]
 		transactionInfo := MCPTransactionInfo{
+			Id:     utils.Int64ToString(transaction.TransactionId),
 			Amount: utils.FormatAmount(transaction.Amount),
 		}
 

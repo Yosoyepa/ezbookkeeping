@@ -20,6 +20,7 @@ type MCPContainer struct {
 	mcpAudioContentTools     *orderedmap.OrderedMap[string, MCPToolHandler[MCPAudioContent]]
 	mcpResourceLinkTools     *orderedmap.OrderedMap[string, MCPToolHandler[MCPResourceLink]]
 	mcpEmbeddedResourceTools *orderedmap.OrderedMap[string, MCPToolHandler[MCPEmbeddedResource]]
+	mcpMixedContentTools     *orderedmap.OrderedMap[string, MCPToolHandler[MCPMixedContent]]
 	mcpTools                 []*MCPTool
 }
 
@@ -59,6 +60,10 @@ func (c *MCPContainer) HandleTool(ctx *core.WebContext, callToolReq *MCPCallTool
 		return handleTool(ctx, handler, currentConfig, services, callToolReq, user)
 	}
 
+	if handler, exists := c.mcpMixedContentTools.Get(callToolReq.Name); exists {
+		return handleTool(ctx, handler, currentConfig, services, callToolReq, user)
+	}
+
 	return nil, errs.ErrApiNotFound
 }
 
@@ -70,6 +75,7 @@ func InitializeMCPHandlers(config *settings.Config) error {
 		mcpAudioContentTools:     orderedmap.New[string, MCPToolHandler[MCPAudioContent]](),
 		mcpResourceLinkTools:     orderedmap.New[string, MCPToolHandler[MCPResourceLink]](),
 		mcpEmbeddedResourceTools: orderedmap.New[string, MCPToolHandler[MCPEmbeddedResource]](),
+		mcpMixedContentTools:     orderedmap.New[string, MCPToolHandler[MCPMixedContent]](),
 		mcpTools:                 make([]*MCPTool, 0),
 	}
 
@@ -80,6 +86,13 @@ func InitializeMCPHandlers(config *settings.Config) error {
 	registerMCPTextContentToolHandler(container, MCPQueryLatestExchangeRatesToolHandler)
 	registerMCPTextContentToolHandler(container, MCPQueryTransactionsToolHandler)
 	registerMCPTextContentToolHandler(container, MCPAddTransactionToolHandler)
+	registerMCPTextContentToolHandler(container, MCPListInboxItemsToolHandler)
+	registerMCPMixedContentToolHandler(container, MCPGetInboxItemToolHandler)
+	registerMCPTextContentToolHandler(container, MCPResolveInboxItemToolHandler)
+	registerMCPTextContentToolHandler(container, MCPDiscardInboxItemToolHandler)
+	registerMCPTextContentToolHandler(container, MCPAddTransactionsBatchToolHandler)
+	registerMCPTextContentToolHandler(container, MCPUpdateTransactionToolHandler)
+	registerMCPTextContentToolHandler(container, MCPGetSpendingSummaryToolHandler)
 
 	Container = container
 	return nil
@@ -105,7 +118,11 @@ func registerMCPEmbeddedResourceToolHandler(c *MCPContainer, handler MCPToolHand
 	registerMCPToolHandler(c, c.mcpEmbeddedResourceTools, handler)
 }
 
-func registerMCPToolHandler[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource](c *MCPContainer, mcpToolHandlerMap *orderedmap.OrderedMap[string, MCPToolHandler[T]], handler MCPToolHandler[T]) {
+func registerMCPMixedContentToolHandler(c *MCPContainer, handler MCPToolHandler[MCPMixedContent]) {
+	registerMCPToolHandler(c, c.mcpMixedContentTools, handler)
+}
+
+func registerMCPToolHandler[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource | MCPMixedContent](c *MCPContainer, mcpToolHandlerMap *orderedmap.OrderedMap[string, MCPToolHandler[T]], handler MCPToolHandler[T]) {
 	if _, exists := mcpToolHandlerMap.Get(handler.Name()); exists {
 		return
 	}
@@ -114,7 +131,7 @@ func registerMCPToolHandler[T MCPTextContent | MCPImageContent | MCPAudioContent
 	c.mcpTools = append(c.mcpTools, createNewMCPToolInfo(handler.Name(), handler))
 }
 
-func handleTool[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource](ctx *core.WebContext, handler MCPToolHandler[T], currentConfig *settings.Config, services MCPAvailableServices, callToolReq *MCPCallToolRequest, user *models.User) (any, error) {
+func handleTool[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource | MCPMixedContent](ctx *core.WebContext, handler MCPToolHandler[T], currentConfig *settings.Config, services MCPAvailableServices, callToolReq *MCPCallToolRequest, user *models.User) (any, error) {
 	enabledTools := core.MCPAllTools
 
 	if context := ctx.GetTokenContext(); context != "" {
@@ -151,7 +168,7 @@ func handleTool[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResour
 	return callToolResp, nil
 }
 
-func createNewMCPToolInfo[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource](name string, handler MCPToolHandler[T]) *MCPTool {
+func createNewMCPToolInfo[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource | MCPMixedContent](name string, handler MCPToolHandler[T]) *MCPTool {
 	mcpTool := &MCPTool{
 		ToolType:    handler.ToolType(),
 		Name:        name,
