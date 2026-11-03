@@ -440,6 +440,73 @@ func TestAddTransactionsBatch_ReimportCreatesNothing(t *testing.T) {
 	assert.Equal(t, int64(4), env.CountTransactions())
 }
 
+func TestAddTransactionsBatch_ProcessesTheInboxStatement(t *testing.T) {
+	initializeMCPContainerTest(t)
+	env := aitest.NewEnv(t)
+
+	statement := env.NewStatement("csv", []byte("fecha;valor\n"))
+	receipt := env.NewReceipt("")
+	id := utils.Int64ToString(statement.ItemId)
+	rows := []any{
+		expenseArgs("45.900", "Éxito Suba", "2026-10-15T12:00:00-05:00"),
+		expenseArgs("12.500", "Tinto", "2026-10-16T08:30:00-05:00"),
+	}
+
+	withItem := func(itemId string, dryRun bool) map[string]any {
+		args := batchArgs(rows, "bancolombia-2026-10", dryRun)
+		args["inbox_item_id"] = itemId
+
+		return args
+	}
+
+	// a dry run validates but does not process the item
+	result, err := callTool(t, env, "add_transactions_batch", withItem(id, true))
+	assert.Nil(t, err)
+	assert.Equal(t, "pending", textOf(t, result)["inbox_item_status"])
+	item, _ := services.InboxItems.GetInboxItemByItemId(env.Ctx, aitest.Uid, statement.ItemId)
+	assert.Equal(t, models.INBOX_ITEM_STATUS_PENDING, item.Status)
+	assert.Equal(t, int64(0), env.CountTransactions())
+
+	// invalid items are rejected before writing anything
+	_, err = callTool(t, env, "add_transactions_batch", withItem("abc", false))
+	assert.Equal(t, errs.ErrInboxItemIdInvalid, err)
+	_, err = callTool(t, env, "add_transactions_batch", withItem("123", false))
+	assert.Equal(t, errs.ErrInboxItemNotFound, err)
+	_, err = callTool(t, env, "add_transactions_batch", withItem(utils.Int64ToString(receipt.ItemId), false))
+	assert.Contains(t, err.Error(), "must be a statement")
+
+	env.Insert(&models.InboxItem{Uid: 999, ItemId: 777, Kind: models.INBOX_ITEM_KIND_STATEMENT, Status: models.INBOX_ITEM_STATUS_PENDING, FileExtension: "csv"})
+	_, err = callTool(t, env, "add_transactions_batch", withItem("777", false))
+	assert.Equal(t, errs.ErrInboxItemNotFound, err) // an item of another user
+	assert.Equal(t, int64(0), env.CountTransactions())
+
+	// the real run processes the item
+	result, err = callTool(t, env, "add_transactions_batch", withItem(id, false))
+	assert.Nil(t, err)
+	parsed := textOf(t, result)
+	assert.Equal(t, float64(2), parsed["created"])
+	assert.Equal(t, "processed", parsed["inbox_item_status"])
+	assert.Nil(t, parsed["warning"])
+
+	item, _ = services.InboxItems.GetInboxItemByItemId(env.Ctx, aitest.Uid, statement.ItemId)
+	assert.Equal(t, models.INBOX_ITEM_STATUS_PROCESSED, item.Status)
+	assert.Equal(t, 2, len(item.GetResultTransactionIds()))
+	assert.Contains(t, item.ProcessedNote, "created 2")
+
+	// it cannot be used again
+	_, err = callTool(t, env, "add_transactions_batch", withItem(id, false))
+	assert.Equal(t, errs.ErrInboxItemNotPending, err)
+	assert.Equal(t, int64(2), env.CountTransactions())
+
+	// when everything is a duplicate the item stays pending
+	other := env.NewStatement("csv", []byte("fecha;valor\n"))
+	result, err = callTool(t, env, "add_transactions_batch", withItem(utils.Int64ToString(other.ItemId), false))
+	assert.Nil(t, err)
+	parsed = textOf(t, result)
+	assert.Equal(t, float64(0), parsed["created"])
+	assert.Equal(t, "pending", parsed["inbox_item_status"])
+}
+
 func TestAddTransactionsBatch_DryRunAndValidation(t *testing.T) {
 	initializeMCPContainerTest(t)
 	env := aitest.NewEnv(t)

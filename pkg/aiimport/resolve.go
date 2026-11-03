@@ -76,19 +76,22 @@ func ResolveInboxItem(c core.Context, svc Services, user *models.User, itemId in
 		return resolveResult, nil
 	}
 
-	processedNote := buildProcessedNote(note, result)
-	err = svc.GetInboxItemService().MarkInboxItemProcessed(c, user.Uid, itemId, result.CreatedTransactionIds, processedNote)
-
-	if err != nil {
-		log.Errorf(c, "[aiimport.ResolveInboxItem] failed to mark inbox item \"id:%d\" as processed for user \"uid:%d\", because %s", itemId, user.Uid, err.Error())
-		resolveResult.Warning = "the transactions were created but the inbox item could not be marked as processed: " + err.Error()
-
-		return resolveResult, nil
-	}
-
-	resolveResult.ItemStatus = "processed"
+	resolveResult.ItemStatus, resolveResult.Warning = FinishInboxItem(c, svc, user.Uid, itemId, note, result)
 
 	return resolveResult, nil
+}
+
+// FinishInboxItem marks the pending inbox item as processed with the ids of the created transactions and a summary in its processed note.
+// It returns the status of the item ("processed", or "pending" if it could not be saved) and a warning in that case
+func FinishInboxItem(c core.Context, svc Services, uid int64, itemId int64, note string, result *Result) (string, string) {
+	err := svc.GetInboxItemService().MarkInboxItemProcessed(c, uid, itemId, result.CreatedTransactionIds, buildProcessedNote(note, result))
+
+	if err != nil {
+		log.Errorf(c, "[aiimport.FinishInboxItem] failed to mark inbox item \"id:%d\" as processed for user \"uid:%d\", because %s", itemId, uid, err.Error())
+		return "pending", "the transactions were created but the inbox item could not be marked as processed: " + err.Error()
+	}
+
+	return "processed", ""
 }
 
 func buildProcessedNote(note string, result *Result) string {
