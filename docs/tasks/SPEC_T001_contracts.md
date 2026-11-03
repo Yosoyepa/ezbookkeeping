@@ -78,7 +78,7 @@ Reglas comunes:
 | `get_inbox_item` | `id` | receipt → `MCPImageContent` + texto con los metadatos. statement csv/txt/ofx/qif → texto. pdf/xlsx → `MCPEmbeddedResource` (blob base64) **y** `download_url` de corta duración (≤ 15 min) |
 | `resolve_inbox_item` | `id`, `transactions: TxRow[]` (1..50), `note?`, `dry_run` | resultado por fila, como en el lote. Si no es dry_run y se creó ≥ 1 transacción: el ítem pasa a processed, la foto queda vinculada y se guardan los ids |
 | `discard_inbox_item` | `id`, `reason` | ok |
-| `add_transactions_batch` | `transactions: TxRow[]` (1..500), `source_label` (obligatorio, p. ej. `"bancolombia-2026-10"`), `skip_duplicates?` = true, `dry_run` | `{created, duplicates, errors, rows:[{index, status: created\|would_create\|duplicate\|error, transaction_id?, duplicate_of?, message?, normalized_amount}]}` |
+| `add_transactions_batch` | `transactions: TxRow[]` (1..500), `source_label` (obligatorio, p. ej. `"bancolombia-2026-10"`), `skip_duplicates?` = true, `inbox_item_id?` (si viene y no es dry_run: el extracto de la bandeja pasa a processed con los ids creados y un resumen en `processed_note`), `dry_run` | `{created, duplicates, errors, rows:[{index, status: created\|would_create\|duplicate\|error, transaction_id?, duplicate_of?, message?, normalized_amount}]}` |
 | `update_transaction` | `id`, `category_name?`, `tags?` (reemplaza), `comment?`, `amount?`, `time?`, `account_name?`, `dry_run` | transacción antes y después |
 | `get_spending_summary` | `start_time`, `end_time` (RFC 3339), `type` (expense\|income), `group_by` (category\|month\|account\|tag\|comment_merchant), `currency?`, `top?` = 20 | `[{key, total, count, share}]` + `{grand_total, currency, period}` |
 
