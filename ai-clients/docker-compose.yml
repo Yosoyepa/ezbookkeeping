@@ -1,17 +1,24 @@
 # Servidor ezBookkeeping con el servidor MCP activado para Claude Code, Antigravity (agy) y Codex.
 #
-# Uso, desde la raíz del repositorio:
+# Uso, desde el clon principal del repositorio (no desde un worktree):
 #   1. Copia ai-clients/.env.example a ai-clients/.env y define EBK_SECURITY_SECRET_KEY (ver ai-clients/README.md).
 #   2. docker compose -f ai-clients/docker-compose.yml up -d --build
 #
 # Los secretos van en ai-clients/.env, que git ignora. No pongas tokens en este archivo.
 services:
   ezbookkeeping:
-    build: ..
+    build:
+      context: ..
+      args:
+        # Patrón de `go test -skip`, no un booleano. Omite las funciones TestExchangeRatesApi* de
+        # pkg/exchangerates, que llaman a APIs externas de tipos de cambio.
+        SKIP_TESTS: "TestExchangeRatesApi"
     image: ezbookkeeping-ai:local
     restart: unless-stopped
     ports:
-      # Por defecto solo este PC. Para el celular por Tailscale, pon en .env la IP 100.x de este PC.
+      # 127.0.0.1: tus CLI en este PC. EBK_BIND_IP: la IP 100.x de Tailscale, para el celular.
+      # Si EBK_BIND_IP vale 127.0.0.1, Docker Compose deduplica la entrada.
+      - "127.0.0.1:8080:8080"
       - "${EBK_BIND_IP:-127.0.0.1}:8080:8080"
     environment:
       TZ: "${TZ:-America/Bogota}"

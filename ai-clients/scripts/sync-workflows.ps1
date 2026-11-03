@@ -50,7 +50,7 @@ function Get-Rendered([string]$file) {
     return ($out -join "`n")
 }
 
-$targets = Get-ChildItem -Path (Join-Path $root 'claude-code'), (Join-Path $root 'antigravity'), (Join-Path $root 'codex') -Recurse -File -Force -Filter '*.md' |
+$targets = Get-ChildItem -Path (Join-Path $root 'claude-code'), (Join-Path $root 'agents') -Recurse -File -Force -Filter '*.md' |
     Where-Object { (Get-Lf ([System.IO.File]::ReadAllText($_.FullName))) -match '(?m)^<!-- BEGIN SHARED' } |
     Sort-Object FullName
 

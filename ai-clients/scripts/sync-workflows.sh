@@ -29,7 +29,7 @@ render() {
 
 # targets: archivos de CLI que contienen el bloque compartido
 targets() {
-    find "$ROOT/claude-code" "$ROOT/antigravity" "$ROOT/codex" -type f -name '*.md' | sort | while IFS= read -r f; do
+    find "$ROOT/claude-code" "$ROOT/agents" -type f -name '*.md' | sort | while IFS= read -r f; do
         if grep -q '^<!-- BEGIN SHARED' "$f"; then
             printf '%s\n' "$f"
         fi

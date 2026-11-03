@@ -43,7 +43,7 @@ El servidor de datos es ezBookkeeping. Sus herramientas MCP aparecen con el nomb
 | `get_inbox_item` | Abrir un ítem. Recibo: imagen y metadatos. Extracto CSV, TXT, OFX o QIF: texto. Extracto PDF o XLSX: archivo incrustado y `download_url` válido 15 minutos. |
 | `resolve_inbox_item` | Convertir un recibo en transacciones (1 a 50 filas) y marcarlo como procesado. |
 | `discard_inbox_item` | Descartar un ítem con un `reason`. |
-| `add_transactions_batch` | Crear transacciones en lote (1 a 500 filas por llamada) con `source_label`. |
+| `add_transactions_batch` | Crear transacciones en lote (1 a 500 filas por llamada) con `source_label`. Opcional: `inbox_item_id`, que cierra el extracto de la bandeja. |
 | `update_transaction` | Cambiar `category_name`, `tags` (reemplaza todas), `comment`, `amount`, `time` o `account_name` de una transacción. |
 | `get_spending_summary` | Totales agregados entre `start_time` y `end_time`, con `type` (expense o income), `group_by` (category, month, account, tag o comment_merchant) y `top`. |
 
@@ -74,8 +74,8 @@ Importa las filas de un extracto bancario. El modelo hace de analizador, así qu
 5. Asigna una categoría del catálogo a cada fila. Si varias filas no tienen categoría clara, pregunta por grupos y no fila por fila.
 6. Llama a `add_transactions_batch` con `dry_run=true`. Muestra el resumen (creadas, duplicadas y errores) y la tabla por fila. Si hay más de 500 filas, divídelas en lotes con el mismo `source_label`.
 7. **Cuadre.** La suma firmada de las filas (ingresos positivos y gastos negativos) debe igualar la variación de saldo del extracto, es decir, saldo final menos saldo inicial, o el total que indique el documento. Si no cuadra, muestra la diferencia y no confirmes hasta que el usuario decida.
-8. Con la confirmación, repite la llamada con `dry_run=false`.
-9. Esta herramienta no marca el ítem de la bandeja como procesado ni como descartado. Deja el ítem como está y avísale al usuario.
+8. Con la confirmación, repite la llamada con `dry_run=false`. Si el origen es la bandeja, añade `inbox_item_id` con el id del extracto. Si hay varios lotes, pásalo solo en el último.
+9. Con `inbox_item_id`, el servidor cierra el extracto de la bandeja y queda procesado. Si el origen es un archivo local, no hay ítem que cerrar.
 10. Cierra con filas creadas, duplicadas omitidas, errores y la diferencia de cuadre, si la hay.
 
 ## /insights [periodo]
