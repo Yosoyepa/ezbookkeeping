@@ -1,0 +1,40 @@
+# Servidor ezBookkeeping con el servidor MCP activado para Claude Code, Antigravity (agy) y Codex.
+#
+# Uso, desde el clon principal del repositorio (no desde un worktree):
+#   1. Copia ai-clients/.env.example a ai-clients/.env y define EBK_SECURITY_SECRET_KEY (ver ai-clients/README.md).
+#   2. docker compose -f ai-clients/docker-compose.yml up -d --build
+#
+# Los secretos van en ai-clients/.env, que git ignora. No pongas tokens en este archivo.
+services:
+  ezbookkeeping:
+    build:
+      context: ..
+      args:
+        # Patrón de `go test -skip`, no un booleano. Omite las funciones TestExchangeRatesApi* de
+        # pkg/exchangerates, que llaman a APIs externas de tipos de cambio.
+        SKIP_TESTS: "TestExchangeRatesApi"
+    image: ezbookkeeping-ai:local
+    restart: unless-stopped
+    ports:
+      # 127.0.0.1: tus CLI en este PC. EBK_BIND_IP: la IP 100.x de Tailscale, para el celular.
+      # Si EBK_BIND_IP vale 127.0.0.1, Docker Compose deduplica la entrada.
+      - "127.0.0.1:8080:8080"
+      - "${EBK_BIND_IP:-127.0.0.1}:8080:8080"
+    environment:
+      TZ: "${TZ:-America/Bogota}"
+      # Obligatoria. Sin ella, upstream firma las sesiones con su clave por defecto ("ezbookkeeping").
+      EBK_SECURITY_SECRET_KEY: "${EBK_SECURITY_SECRET_KEY:?Define EBK_SECURITY_SECRET_KEY en ai-clients/.env}"
+      # Nombre o IP con la que abres el servidor. Upstream lo usa en las URL absolutas de las fotos: con localhost, el celular no las verá.
+      EBK_SERVER_DOMAIN: "${EBK_SERVER_DOMAIN:-localhost}"
+      EBK_MCP_ENABLE_MCP: "true"
+      # IPs permitidas para MCP. Con Docker, el servidor puede ver la IP del gateway de Docker en lugar de la tuya; ver README.
+      EBK_MCP_MCP_ALLOWED_REMOTE_IPS: "${EBK_MCP_ALLOWED_REMOTE_IPS:-127.0.0.1,172.*.*.*,192.168.65.*}"
+    volumes:
+      - ezbookkeeping-data:/ezbookkeeping/data
+      - ezbookkeeping-storage:/ezbookkeeping/storage
+      - ezbookkeeping-log:/ezbookkeeping/log
+
+volumes:
+  ezbookkeeping-data:
+  ezbookkeeping-storage:
+  ezbookkeeping-log:
