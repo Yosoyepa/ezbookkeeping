@@ -1,0 +1,33 @@
+# Servidor ezBookkeeping con el servidor MCP activado para Claude Code, Antigravity (agy) y Codex.
+#
+# Uso, desde la raíz del repositorio:
+#   1. Copia ai-clients/.env.example a ai-clients/.env y define EBK_SECURITY_SECRET_KEY (ver ai-clients/README.md).
+#   2. docker compose -f ai-clients/docker-compose.yml up -d --build
+#
+# Los secretos van en ai-clients/.env, que git ignora. No pongas tokens en este archivo.
+services:
+  ezbookkeeping:
+    build: ..
+    image: ezbookkeeping-ai:local
+    restart: unless-stopped
+    ports:
+      # Por defecto solo este PC. Para el celular por Tailscale, pon en .env la IP 100.x de este PC.
+      - "${EBK_BIND_IP:-127.0.0.1}:8080:8080"
+    environment:
+      TZ: "${TZ:-America/Bogota}"
+      # Obligatoria. Sin ella, upstream firma las sesiones con su clave por defecto ("ezbookkeeping").
+      EBK_SECURITY_SECRET_KEY: "${EBK_SECURITY_SECRET_KEY:?Define EBK_SECURITY_SECRET_KEY en ai-clients/.env}"
+      # Nombre o IP con la que abres el servidor. Upstream lo usa en las URL absolutas de las fotos: con localhost, el celular no las verá.
+      EBK_SERVER_DOMAIN: "${EBK_SERVER_DOMAIN:-localhost}"
+      EBK_MCP_ENABLE_MCP: "true"
+      # IPs permitidas para MCP. Con Docker, el servidor puede ver la IP del gateway de Docker en lugar de la tuya; ver README.
+      EBK_MCP_MCP_ALLOWED_REMOTE_IPS: "${EBK_MCP_ALLOWED_REMOTE_IPS:-127.0.0.1,172.*.*.*,192.168.65.*}"
+    volumes:
+      - ezbookkeeping-data:/ezbookkeeping/data
+      - ezbookkeeping-storage:/ezbookkeeping/storage
+      - ezbookkeeping-log:/ezbookkeeping/log
+
+volumes:
+  ezbookkeeping-data:
+  ezbookkeeping-storage:
+  ezbookkeeping-log:

@@ -1,0 +1,2 @@
+# Los scripts de shell necesitan finales de línea LF aunque Git esté configurado con core.autocrlf=true.
+*.sh text eol=lf
