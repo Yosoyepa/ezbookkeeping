@@ -1,0 +1,8 @@
+# Fragment for ~/.codex/config.toml (or pass each key with `codex exec -c key=value`).
+# The token is read from the EBK_MCP_TOKEN environment variable (value: <EBK_MCP_TOKEN>), never written here.
+[mcp_servers.ebk]
+url = "http://127.0.0.1:8080/mcp"
+bearer_token_env_var = "EBK_MCP_TOKEN"
+
+# Needed for non-interactive `codex exec` (approval policy "never" rejects MCP calls otherwise).
+default_tools_approval_mode = "approve"
