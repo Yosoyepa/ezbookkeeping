@@ -21,6 +21,7 @@ type ModelContextProtocolAPI struct {
 	transactions          *services.TransactionService
 	transactionCategories *services.TransactionCategoryService
 	transactionTags       *services.TransactionTagService
+	transactionPictures   *services.TransactionPictureService
 	accounts              *services.AccountService
 	users                 *services.UserService
 	tokens                *services.TokenService
@@ -35,6 +36,7 @@ var (
 		transactions:          services.Transactions,
 		transactionCategories: services.TransactionCategories,
 		transactionTags:       services.TransactionTags,
+		transactionPictures:   services.TransactionPictures,
 		accounts:              services.Accounts,
 		users:                 services.Users,
 		tokens:                services.Tokens,
@@ -267,6 +269,11 @@ func (a *ModelContextProtocolAPI) GetTransactionCategoryService() *services.Tran
 // GetTransactionTagService implements the MCPAvailableServices interface
 func (a *ModelContextProtocolAPI) GetTransactionTagService() *services.TransactionTagService {
 	return a.transactionTags
+}
+
+// GetTransactionPictureService implements the MCPAvailableServices interface
+func (a *ModelContextProtocolAPI) GetTransactionPictureService() *services.TransactionPictureService {
+	return a.transactionPictures
 }
 
 // GetAccountService implements the MCPAvailableServices interface

@@ -80,6 +80,7 @@ func InitializeMCPHandlers(config *settings.Config) error {
 	registerMCPTextContentToolHandler(container, MCPQueryLatestExchangeRatesToolHandler)
 	registerMCPTextContentToolHandler(container, MCPQueryTransactionsToolHandler)
 	registerMCPTextContentToolHandler(container, MCPAddTransactionToolHandler)
+	registerMCPImageContentToolHandler(container, MCPGetReceiptImageToolHandler)
 
 	Container = container
 	return nil

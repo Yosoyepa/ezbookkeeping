@@ -14,6 +14,7 @@ type MCPAvailableServices interface {
 	GetTransactionService() *services.TransactionService
 	GetTransactionCategoryService() *services.TransactionCategoryService
 	GetTransactionTagService() *services.TransactionTagService
+	GetTransactionPictureService() *services.TransactionPictureService
 	GetAccountService() *services.AccountService
 	GetUserService() *services.UserService
 }
