@@ -8,6 +8,7 @@ export const PARSE_TRANSACTION_API_URL_PATH: string = BASE_API_V1_URL_PATH + '/t
 
 export const DEFAULT_API_TIMEOUT: number = 10000; // 10s
 export const DEFAULT_UPLOAD_API_TIMEOUT: number = 30000; // 30s
+export const DEFAULT_INBOX_UPLOAD_API_TIMEOUT: number = 120000; // 120s, statements can be up to 20 MB
 export const DEFAULT_EXPORT_API_TIMEOUT: number = 180000; // 180s
 export const DEFAULT_IMPORT_API_TIMEOUT: number = 1800000; // 1800s
 export const DEFAULT_BATCH_UPDATE_TRANSACTIONS_API_TIMEOUT: number = 1800000; // 1800s
@@ -101,6 +102,24 @@ export const SPECIFIED_API_NOT_FOUND_ERRORS: Record<string, SpecifiedApiError> =
     },
     '/api/v1/transaction/pictures/remove_unused.json': {
         message: 'Transaction picture is disabled'
+    },
+    '/api/v1/inbox/items/stats.json': {
+        message: 'Inbox is disabled'
+    },
+    '/api/v1/inbox/items/list.json': {
+        message: 'Inbox is disabled'
+    },
+    '/api/v1/inbox/items/upload.json': {
+        message: 'Inbox is disabled'
+    },
+    '/api/v1/inbox/items/discard.json': {
+        message: 'Inbox is disabled'
+    },
+    '/api/v1/inbox/items/reopen.json': {
+        message: 'Inbox is disabled'
+    },
+    '/api/v1/inbox/items/delete.json': {
+        message: 'Inbox is disabled'
     },
     '/api/v1/llm/transactions/recognize_text.json': {
         message: 'AI text recognition is disabled'

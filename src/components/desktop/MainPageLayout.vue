@@ -88,6 +88,17 @@
                                     </v-btn>
                                 </router-link>
 
+                                <router-link to="/inbox"
+                                             :aria-current="isTopNavigationActive('/inbox') ? 'page' : undefined">
+                                    <v-btn class="top-navigation-button ms-1" density="comfortable" variant="text"
+                                           :aria-label="tt('Inbox')" :icon="true"
+                                           :active="isTopNavigationActive('/inbox')"
+                                           :color="isTopNavigationActive('/inbox') ? 'primary' : 'default'">
+                                        <v-icon :icon="isTopNavigationActive('/inbox') ? mdiInbox : mdiInboxOutline" size="24" />
+                                        <v-tooltip activator="parent">{{ tt('Inbox') }}</v-tooltip>
+                                    </v-btn>
+                                </router-link>
+
                                 <router-link class="d-inline-flex align-center" to="/transaction/list?pageType=0&dateType=7"
                                              v-if="showAddTransactionButtonInDesktopNavbar">
                                     <v-btn class="add-transaction-button ms-2" color="primary" density="comfortable" variant="flat"
@@ -212,6 +223,8 @@ import {
     mdiChartPieOutline,
     mdiCompass,
     mdiCompassOutline,
+    mdiInbox,
+    mdiInboxOutline,
     mdiPlus,
     mdiCellphone,
     mdiThemeLightDark,
