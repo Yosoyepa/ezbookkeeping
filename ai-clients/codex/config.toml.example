@@ -1,0 +1,5 @@
+# Copia este bloque a ~/.codex/config.toml (archivo global de Codex, fuera del repo).
+# El token no va aquí: bearer_token_env_var indica el NOMBRE de la variable de entorno que lo contiene.
+[mcp_servers.ebk]
+url = "http://127.0.0.1:8080/mcp"
+bearer_token_env_var = "EBK_MCP_TOKEN"

@@ -21,9 +21,11 @@ type ModelContextProtocolAPI struct {
 	transactions          *services.TransactionService
 	transactionCategories *services.TransactionCategoryService
 	transactionTags       *services.TransactionTagService
+	transactionPictures   *services.TransactionPictureService
 	accounts              *services.AccountService
 	users                 *services.UserService
 	tokens                *services.TokenService
+	inboxItems            *services.InboxItemService
 }
 
 // Initialize a model context protocol api singleton instance
@@ -35,9 +37,11 @@ var (
 		transactions:          services.Transactions,
 		transactionCategories: services.TransactionCategories,
 		transactionTags:       services.TransactionTags,
+		transactionPictures:   services.TransactionPictures,
 		accounts:              services.Accounts,
 		users:                 services.Users,
 		tokens:                services.Tokens,
+		inboxItems:            services.InboxItems,
 	}
 )
 
@@ -269,6 +273,11 @@ func (a *ModelContextProtocolAPI) GetTransactionTagService() *services.Transacti
 	return a.transactionTags
 }
 
+// GetTransactionPictureService implements the MCPAvailableServices interface
+func (a *ModelContextProtocolAPI) GetTransactionPictureService() *services.TransactionPictureService {
+	return a.transactionPictures
+}
+
 // GetAccountService implements the MCPAvailableServices interface
 func (a *ModelContextProtocolAPI) GetAccountService() *services.AccountService {
 	return a.accounts
@@ -277,6 +286,11 @@ func (a *ModelContextProtocolAPI) GetAccountService() *services.AccountService {
 // GetUserService implements the MCPAvailableServices interface
 func (a *ModelContextProtocolAPI) GetUserService() *services.UserService {
 	return a.users
+}
+
+// GetInboxItemService implements the MCPAvailableServices interface
+func (a *ModelContextProtocolAPI) GetInboxItemService() *services.InboxItemService {
+	return a.inboxItems
 }
 
 // getMCPVersion returns the MCP protocol version from the request header

@@ -4,6 +4,14 @@
             <f7-nav-title :title="tt('global.app.title')"></f7-nav-title>
         </f7-navbar>
 
+        <f7-block class="margin-vertical-half inbox-entry-buttons">
+            <f7-button fill round icon-f7="camera" class="receipt-capture-button" @click="openReceiptCamera">{{ tt('Receipt') }}</f7-button>
+            <f7-button outline round icon-f7="tray" href="/inbox" class="inbox-entry-button">
+                {{ tt('Inbox') }}
+                <f7-badge color="red" class="inbox-pending-badge" v-if="inboxPendingCount > 0">{{ inboxPendingCount }}</f7-badge>
+            </f7-button>
+        </f7-block>
+
         <overview-dashboard :layout="layout" :loading="loading" @navigate="onNavigate" />
 
         <f7-toolbar tabbar icons bottom class="main-tabbar">
@@ -61,6 +69,8 @@
             </f7-list>
         </f7-popover>
 
+        <receipt-capture-sheet ref="receiptCaptureSheet" v-model:show="showReceiptCaptureSheet" />
+
         <a-i-image-recognition-sheet ref="aiImageRecognitionSheet"
                                      v-model:show="showAIReceiptImageRecognitionSheet"
                                      @recognition:change="onReceiptRecognitionChanged"/>
@@ -69,6 +79,7 @@
 
 <script setup lang="ts">
 import AIImageRecognitionSheet, { type AIImageRecognitionResult } from '@/components/mobile/AIImageRecognitionSheet.vue';
+import ReceiptCaptureSheet from '@/components/mobile/ReceiptCaptureSheet.vue';
 import OverviewDashboard from './overview/OverviewDashboard.vue';
 
 import { ref, computed, useTemplateRef } from 'vue';
@@ -82,6 +93,7 @@ import { useAccountsStore } from '@/stores/account.ts';
 import { useTransactionCategoriesStore } from '@/stores/transactionCategory.ts';
 import { useTransactionTemplatesStore } from '@/stores/transactionTemplate.ts';
 import { useOverviewStore } from '@/stores/overview.ts';
+import { useInboxStore } from '@/stores/inbox.ts';
 
 import type { PartialRecord } from '@/core/base.ts';
 import {
@@ -114,6 +126,7 @@ import {
 import logger from '@/lib/logger.ts';
 
 type AIImageRecognitionSheetType = InstanceType<typeof AIImageRecognitionSheet>;
+type ReceiptCaptureSheetType = InstanceType<typeof ReceiptCaptureSheet>;
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -127,12 +140,17 @@ const accountsStore = useAccountsStore();
 const transactionCategoriesStore = useTransactionCategoriesStore();
 const transactionTemplatesStore = useTransactionTemplatesStore();
 const overviewStore = useOverviewStore();
+const inboxStore = useInboxStore();
 
 const aiImageRecognitionSheet = useTemplateRef<AIImageRecognitionSheetType>('aiImageRecognitionSheet');
+const receiptCaptureSheet = useTemplateRef<ReceiptCaptureSheetType>('receiptCaptureSheet');
 
 const loading = ref<boolean>(true);
 const showTransactionTemplatePopover = ref<boolean>(false);
 const showAIReceiptImageRecognitionSheet = ref<boolean>(false);
+const showReceiptCaptureSheet = ref<boolean>(false);
+
+const inboxPendingCount = computed<number>(() => inboxStore.pendingItemCount);
 
 const layout = computed<MobileOverviewLayout>(() => {
     try {
@@ -158,6 +176,7 @@ function openTransactionTemplatePopover(): void {
 
 function init(): void {
     if (isUserLogined() && isUserUnlocked()) {
+        loadInboxStats();
         loading.value = true;
 
         const promises: Promise<unknown>[] = [
@@ -185,8 +204,19 @@ function init(): void {
     }
 }
 
+function openReceiptCamera(): void {
+    receiptCaptureSheet.value?.openCamera();
+}
+
+function loadInboxStats(): void {
+    // if the statistics cannot be loaded, the pending badge simply stays hidden
+    inboxStore.loadStats().catch(() => undefined);
+}
+
 function reload(done?: () => void): void {
     const force = !!done;
+
+    loadInboxStats();
     const promises: Promise<unknown>[] = reloadOverviewData(force);
 
     if (promises.length < 1) {
@@ -362,6 +392,16 @@ init();
 </script>
 
 <style>
+.inbox-entry-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.inbox-entry-buttons > .button {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
 .home-summary-card {
     background-color: var(--f7-color-yellow);
 }

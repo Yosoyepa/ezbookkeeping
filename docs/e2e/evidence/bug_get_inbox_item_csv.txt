@@ -1,0 +1,19 @@
+
+BUG-02 (alto): el contenido de un extracto CSV de la bandeja no llega al modelo en Claude Code 2.1.306.
+
+Salida del servidor (llamada MCP directa a get_inbox_item del CSV nequi_2026-10.csv):
+  HTTP 200, content: 2 bloques de tipo text
+  bloque 1 (297 bytes): {"id":...,"kind":"statement",...,"file_extension":"csv",...,"content_included":true}
+  bloque 2 (609 bytes): "Nequi - extracto de movimientos ... Saldo inicial;350.000,00 ... Saldo final;174.300,00"
+
+Lo que recibe Claude Code (run6_extracto_csv_inbox_resumen.txt): el tool_result es solo la cadena de metadatos
+(sin el bloque 2). El modelo lo declara y no puede preparar el dry_run.
+Repetido con WebFetch permitido (run7): WebFetch rechaza 'localhost' ("cannot fetch localhost or other hostnames
+without a dot") y el respaldo con curl pide permiso que el modo -p no concede.
+
+Sospecha: el servidor sí devuelve los dos bloques (pkg/mcp/get_inbox_item_tool_handler.go:143-147 arma
+'blocks' con el texto del archivo). El cliente conserva un solo bloque de texto; el servidor también envía
+structuredContent (protocolo 2025-06-18). No verifiqué el código del cliente. 'content_included: true' sugiere
+que el contenido viaja, y no es así en este cliente.
+Repercusión: /extracto <id de la bandeja> no funciona con Claude Code. Se completó pegando el contenido en el
+prompt (run8), lo que cierra el ítem con inbox_item_id pero no prueba la lectura desde la bandeja.

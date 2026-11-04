@@ -1,0 +1,41 @@
+2026-11-04T00:56:46.719Z TAP Iniciar sesión
+2026-11-04T00:56:46.871Z login OK, pantalla de inicio visible
+2026-11-04T00:56:47.003Z TAP Recibo (inicio) ronda 1
+2026-11-04T00:56:47.019Z disparo simulado con e2e_06_pwa_cafeteria.jpg
+2026-11-04T00:56:47.342Z TAP Subir (1) ronda 1
+2026-11-04T00:56:47.400Z solicitud de subida #1 -> enviada al servidor
+2026-11-04T00:56:47.592Z solicitud de subida #2 -> bloqueada por el arnés (repetición de la misma foto)
+2026-11-04T00:56:51.347Z ronda 1: solicitudes de subida de la hoja = 2
+2026-11-04T00:56:51.369Z TAP Cancelar (X) ronda 1
+2026-11-04T00:56:52.201Z TAP Recibo (inicio) ronda 2
+2026-11-04T00:56:52.218Z disparo simulado con e2e_07_pwa_papeleria.jpg
+2026-11-04T00:56:53.039Z TAP Subir (1) ronda 2
+2026-11-04T00:56:53.056Z solicitud de subida #3 -> enviada al servidor
+2026-11-04T00:56:54.538Z solicitud de subida #4 -> bloqueada por el arnés (repetición de la misma foto)
+2026-11-04T00:56:57.054Z ronda 2: solicitudes de subida de la hoja = 2
+2026-11-04T00:56:57.079Z TAP Cancelar (X) ronda 2
+2026-11-04T00:56:57.881Z toques de captura: 5 toques (incluye Subir y Recibo) + 2 disparos simulados
+2026-11-04T00:56:57.925Z TAP Bandeja (inicio)
+2026-11-04T00:56:59.007Z pendientes en pantalla: 2 ["Recibo","Recibo"]
+2026-11-04T00:56:59.035Z TAP fila más reciente (segunda captura)
+2026-11-04T00:56:59.855Z TAP Descartar
+2026-11-04T00:57:01.395Z TAP pestaña Descartados
+2026-11-04T00:57:02.450Z descartados en pantalla: 1
+2026-11-04T00:57:02.481Z TAP fila descartada (reabrir)
+2026-11-04T00:57:03.296Z TAP Reabrir
+2026-11-04T00:57:04.809Z descartado y reabierto
+2026-11-04T00:57:04.829Z TAP pestaña Procesados
+2026-11-04T00:57:06.381Z procesados en pantalla: 6
+2026-11-04T00:57:06.381Z RESUMEN solicitudes de subida=4 bloqueadas=2 toques=["Iniciar sesión","Recibo (inicio) ronda 1","Subir (1) ronda 1","Cancelar (X) ronda 1","Recibo (inicio) ronda 2","Subir (1) ronda 2","Cancelar (X) ronda 2","Bandeja (inicio)","fila más reciente (segunda captura)","Descartar","pestaña Descartados","fila descartada (reabrir)","Reabrir","pestaña Procesados"] disparos=["disparo ronda 1 (simulado con setInputFiles: e2e_06_pwa_cafeteria.jpg)","disparo ronda 2 (simulado con setInputFiles: e2e_07_pwa_papeleria.jpg)"]
+
+CONSOLE:
+error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+error: [ezBookkeeping Error] failed to upload inbox item AxiosError: Request failed with status code 503
+    at zj (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:771111)
+    at XMLHttpRequest._ (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:780549)
+    at nH.request (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:797719)
+error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+error: [ezBookkeeping Error] failed to upload inbox item AxiosError: Request failed with status code 503
+    at zj (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:771111)
+    at XMLHttpRequest._ (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:780549)
+    at nH.request (http://localhost:8080/js/vendor-common-Di3RF7oP.js:1:797719)

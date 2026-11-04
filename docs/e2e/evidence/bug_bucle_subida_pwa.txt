@@ -1,0 +1,22 @@
+
+BUG-01 (crítico): la PWA sube la misma foto en bucle y no la quita de la hoja.
+
+Reproducción sin intercepción (PWA móvil 390x844, Chrome headless, usuario e2etester):
+  1. Inicio -> "Recibo" -> disparo simulado (setInputFiles e2e_06_pwa_cafeteria.jpg) -> "Subir (1)".
+  2. Esperar ~30 s y consultar la bandeja (GET /api/v1/inbox/items/stats.json y list.json).
+  Resultado observado: 722 recibos pendientes, todos con nombre 'receipt.jpg', creados entre
+  2026-11-04T00:52:33Z y 2026-11-04T00:53:01Z (28 s). Se borraron con un script de limpieza tras confirmar que no crecían.
+
+Reproducción con intercepción de red del test (pwa_playwright_log.txt, versión v3):
+  solicitud de subida #1 -> enviada al servidor
+  solicitud de subida #2 -> bloqueada por el arnés (repetición de la misma foto)
+  Consola: "failed to upload inbox item AxiosError: Request failed with status code 503" (por el bloqueo)
+  Hoja "Recibos nuevos" sigue abierta con la miniatura y el botón "Subir (1)": pwa_bug_hoja_tras_subida.png
+
+Sospecha (no modificado el código):
+  src/components/mobile/ReceiptCaptureSheet.vue:117-119  removePhoto() sale sin borrar si uploading.value es true.
+  src/components/mobile/ReceiptCaptureSheet.vue:183-186  tras cada subida correcta llama removePhoto(photo.id) y
+                                                          uploadNextPhoto(), pero uploading.value sigue en true,
+                                                          así que la foto nunca sale de photos y uploadNextPhoto()
+                                                          vuelve a tomar photos.value[0].
+Impacto: duplicados sin límite en la bandeja y en el almacenamiento; contador de subidas incorrecto; C2 y C6 no se cumplen.

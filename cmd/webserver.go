@@ -200,6 +200,9 @@ func startWebServer(c *core.CliContext) error {
 		{
 			pictureRoute.GET("/:fileName", bindImage(api.TransactionPictures.TransactionPictureGetHandler, config))
 		}
+
+		// the token in the url is a single-use token created by the MCP tool get_inbox_item
+		router.GET("/inbox/download/:token", bindImage(api.InboxItems.InboxItemFileDownloadByTokenHandler, config))
 	}
 
 	if config.EnableUserCustomIcon {
@@ -436,6 +439,16 @@ func startWebServer(c *core.CliContext) error {
 			if config.EnableTransactionPictures {
 				apiV1Route.POST("/transaction/pictures/upload.json", bindApi(api.TransactionPictures.TransactionPictureUploadHandler, config))
 				apiV1Route.POST("/transaction/pictures/remove_unused.json", bindApi(api.TransactionPictures.TransactionPictureRemoveUnusedHandler, config))
+
+				// Inbox (receipts and statements waiting to be processed by the AI clients)
+				apiV1Route.POST("/inbox/items/upload.json", bindApi(api.InboxItems.InboxItemUploadHandler, config))
+				apiV1Route.GET("/inbox/items/list.json", bindApi(api.InboxItems.InboxItemListHandler, config))
+				apiV1Route.GET("/inbox/items/get.json", bindApi(api.InboxItems.InboxItemGetHandler, config))
+				apiV1Route.GET("/inbox/items/stats.json", bindApi(api.InboxItems.InboxItemStatsHandler, config))
+				apiV1Route.POST("/inbox/items/discard.json", bindApi(api.InboxItems.InboxItemDiscardHandler, config))
+				apiV1Route.POST("/inbox/items/reopen.json", bindApi(api.InboxItems.InboxItemReopenHandler, config))
+				apiV1Route.POST("/inbox/items/delete.json", bindApi(api.InboxItems.InboxItemDeleteHandler, config))
+				apiV1Route.GET("/inbox/items/file/:id", bindImage(api.InboxItems.InboxItemFileGetHandler, config))
 			}
 
 			// Transaction Categories

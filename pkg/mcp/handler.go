@@ -14,12 +14,14 @@ type MCPAvailableServices interface {
 	GetTransactionService() *services.TransactionService
 	GetTransactionCategoryService() *services.TransactionCategoryService
 	GetTransactionTagService() *services.TransactionTagService
+	GetTransactionPictureService() *services.TransactionPictureService
 	GetAccountService() *services.AccountService
 	GetUserService() *services.UserService
+	GetInboxItemService() *services.InboxItemService
 }
 
 // MCPToolHandler defines the MCP tool handler
-type MCPToolHandler[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource] interface {
+type MCPToolHandler[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource | MCPMixedContent] interface {
 	// ToolType returns the MCP tool type
 	ToolType() core.MCPToolType
 

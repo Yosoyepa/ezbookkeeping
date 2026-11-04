@@ -1,0 +1,14 @@
+
+BUG-04 (alto): query_all_transaction_categories devuelve catálogo vacío si solo hay categorías de primer nivel.
+
+Reproducción: crear categorías sin subcategorías
+  POST /api/v1/transaction/categories/add_batch.json  {"categories":[{"name":"Supermercado","type":2,...,"subCategories":[]}]}
+  (la API REST /transaction/categories/list.json SÍ las lista)
+  MCP query_all_transaction_categories -> {"incomeCategories":{},"expenseCategories":{},"transferCategories":{}}
+Efecto en /recibos (run1_recibos_resumen.txt): el modelo dice que el catálogo "llegó vacío", no propone filas y pide
+crear categorías en la app. Con una jerarquía de dos niveles (padre + subcategorías) la misma llamada lista todo
+(run2 y siguientes).
+
+Sospecha: pkg/mcp/query_all_transaction_categories_tool_handler.go:88 hace 'continue' con las categorías de
+primer nivel (ParentCategoryId == LevelOne), sin aviso. La descripción de category_name dice 'Secondary category name'
+pero el README y ai-clients/ no lo indican.

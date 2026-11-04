@@ -141,7 +141,7 @@ type MCPCallToolRequest struct {
 }
 
 // MCPCallToolResponse defines the response structure for calling a tool in the MCP
-type MCPCallToolResponse[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource] struct {
+type MCPCallToolResponse[T MCPTextContent | MCPImageContent | MCPAudioContent | MCPResourceLink | MCPEmbeddedResource | MCPMixedContent] struct {
 	Content           []*T `json:"content"`
 	StructuredContent any  `json:"structuredContent,omitempty"`
 	IsError           bool `json:"isError,omitempty"`

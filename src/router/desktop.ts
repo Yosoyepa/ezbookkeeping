@@ -47,6 +47,8 @@ import DeveloperToolsPage from '@/views/desktop/settings/DeveloperToolsPage.vue'
 
 import ExchangeRatesListPage from '@/views/desktop/exchangerates/ListPage.vue';
 
+import InboxListPage from '@/views/desktop/inbox/ListPage.vue';
+
 function checkLogin(): NavigationGuardReturn {
     if (!isUserLogined()) {
         return {
@@ -163,6 +165,11 @@ const router = createRouter({
         {
             path: '/account/list',
             component: AccountListPage,
+            beforeEnter: checkLogin
+        },
+        {
+            path: '/inbox',
+            component: InboxListPage,
             beforeEnter: checkLogin
         },
         {

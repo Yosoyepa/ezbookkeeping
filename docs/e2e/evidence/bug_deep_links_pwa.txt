@@ -1,0 +1,10 @@
+
+BUG-05 (bajo): rutas profundas de la PWA devuelven 404 JSON.
+
+  curl -H "Accept: text/html" http://localhost:8080/mobile        -> 200 (mobile.html)
+  curl -H "Accept: text/html" http://localhost:8080/mobile/inbox  -> 404 {"errorCode":100001,"errorMessage":"api not found"}
+  curl -H "Accept: text/html" http://localhost:8080/mobile/login  -> 404 (mismo JSON)
+  curl -H "Accept: text/html" http://localhost:8080/login         -> 404 (mismo JSON)
+Sospecha: cmd/webserver.go:154 sirve solo '/mobile' como StaticFile y cmd/webserver.go:131 manda cualquier otra
+ruta a ApiNotFound (JSON). Recargar la página en /mobile/inbox o abrir un enlace profundo falla.
+Limitación: comprobado con curl (no con recarga en el navegador).
