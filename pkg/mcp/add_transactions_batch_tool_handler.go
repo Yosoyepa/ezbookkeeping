@@ -25,8 +25,9 @@ type MCPAddTransactionsBatchRequest struct {
 type MCPAddTransactionsBatchResponse struct {
 	DryRun      bool   `json:"dry_run" jsonschema_description:"Indicates whether this operation was a dry run (nothing saved)"`
 	SourceLabel string `json:"source_label" jsonschema_description:"Label of the origin"`
-	ItemStatus  string `json:"inbox_item_status,omitempty" jsonschema:"enum=pending,enum=processed" jsonschema_description:"Status of the inbox item after the call (only when inbox_item_id was sent)"`
+	ItemStatus  string `json:"inbox_item_status,omitempty" jsonschema:"enum=pending,enum=processed" jsonschema_description:"Status of the inbox item after the call (only when inbox_item_id was sent). It becomes processed when no row failed and at least one transaction was created (now or in a previous call); if any row failed it stays pending"`
 	Warning     string `json:"warning,omitempty" jsonschema_description:"Something that needs attention, e.g. the transactions were saved but the inbox item could not be marked as processed"`
+	NextStep    string `json:"next_step,omitempty" jsonschema_description:"What to do next when the inbox item stays pending because some rows failed"`
 	*aiimport.Result
 }
 
@@ -47,7 +48,7 @@ func (h *mcpAddTransactionsBatchToolHandler) Name() string {
 // Description returns the description of the MCP tool
 func (h *mcpAddTransactionsBatchToolHandler) Description() string {
 	return "Add many transactions at once (e.g. the rows of a bank statement). Rows that look like an existing transaction (same account, type and amount within 1 day and a similar description) or like a previous row of the request are skipped as duplicates, so importing the same statement twice creates nothing. " +
-		"Every created transaction gets the tag 'ia' and a comment ending with [origen: <source_label>]. If the rows come from an inbox statement, send its inbox_item_id: the item becomes processed after the real run. The result has one entry per row with the normalized amount: check it against the document. Never invent accounts, categories, amounts or dates. " + dryRunDescription
+		"Every created transaction gets the tag 'ia' and a comment ending with [origen: <source_label>]. If the rows come from an inbox statement, send its inbox_item_id: the item becomes processed after the real run when no row failed; if some rows fail it stays pending, so fix those rows and call again (the rows already created are skipped as duplicates). The result has one entry per row with the normalized amount: check it against the document. Never invent accounts, categories, amounts or dates. " + dryRunDescription
 }
 
 // InputType returns the input type for the MCP tool request
@@ -84,58 +85,49 @@ func (h *mcpAddTransactionsBatchToolHandler) Handle(c *core.WebContext, callTool
 		return nil, nil, errs.NewInboxToolError("transactions must have between 1 and 500 rows")
 	}
 
-	var inboxItemId int64
-
-	if request.InboxItemId != "" {
-		inboxItemId, err = parseInboxItemIdArgument(request.InboxItemId)
-
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// the item must belong to the user (the lookup is by uid) and be a pending statement
-		item, err := services.GetInboxItemService().GetInboxItemByItemId(c, user.Uid, inboxItemId)
-
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if item.Status != models.INBOX_ITEM_STATUS_PENDING {
-			return nil, nil, errs.ErrInboxItemNotPending
-		}
-
-		if item.Kind != models.INBOX_ITEM_KIND_STATEMENT {
-			return nil, nil, errs.NewInboxToolError("inbox_item_id must be a statement, use resolve_inbox_item for receipts")
-		}
-	}
-
-	skipDuplicates := request.SkipDuplicates == nil || *request.SkipDuplicates
-
-	result, err := aiimport.Import(c, services, user, request.Transactions, &aiimport.Options{
+	options := &aiimport.Options{
 		SourceLabel:    sourceLabel,
-		SkipDuplicates: skipDuplicates,
+		SkipDuplicates: request.SkipDuplicates == nil || *request.SkipDuplicates,
 		DryRun:         dryRun,
 		ClientIP:       c.ClientIP(),
-	})
+	}
+
+	response := &MCPAddTransactionsBatchResponse{
+		DryRun:      dryRun,
+		SourceLabel: sourceLabel,
+	}
+
+	if request.InboxItemId != "" {
+		inboxItemId, err := parseInboxItemIdArgument(request.InboxItemId)
+
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// the item is checked, reserved and updated together with the writes (the item must belong to the user and be a pending statement)
+		statementResult, err := aiimport.ImportStatementRows(c, services, user, inboxItemId, request.Transactions, options)
+
+		if err != nil {
+			log.Warnf(c, "[add_transactions_batch_tool_handler.Handle] failed to add transactions for user \"uid:%d\", because %s", user.Uid, err.Error())
+			return nil, nil, err
+		}
+
+		response.Result = statementResult.Result
+		response.ItemStatus = statementResult.ItemStatus
+		response.Warning = statementResult.Warning
+		response.NextStep = statementResult.NextStep
+
+		return newJSONTextResponse(response)
+	}
+
+	result, err := aiimport.Import(c, services, user, request.Transactions, options)
 
 	if err != nil {
 		log.Warnf(c, "[add_transactions_batch_tool_handler.Handle] failed to add transactions for user \"uid:%d\", because %s", user.Uid, err.Error())
 		return nil, nil, err
 	}
 
-	response := &MCPAddTransactionsBatchResponse{
-		DryRun:      dryRun,
-		SourceLabel: sourceLabel,
-		Result:      result,
-	}
-
-	if inboxItemId > 0 {
-		response.ItemStatus = inboxStatusPendingName
-
-		if !dryRun && result.Created > 0 {
-			response.ItemStatus, response.Warning = aiimport.FinishInboxItem(c, services, user.Uid, inboxItemId, "", result)
-		}
-	}
+	response.Result = result
 
 	return newJSONTextResponse(response)
 }

@@ -2616,48 +2616,120 @@ func (s *TransactionService) GetTransactionIds(transactions []*models.Transactio
 	return transactionIds
 }
 
-func (s *TransactionService) doCreateTransaction(c core.Context, database *datastore.Database, sess *xorm.Session, transaction *models.Transaction, transactionTagIndexes []*models.TransactionTagIndex, tagIds []int64, pictureIds []int64, pictureUpdateModel *models.TransactionPictureInfo) error {
-	// Get and verify source and destination account
-	sourceAccount, destinationAccount, err := s.getAccountModels(sess, transaction)
+// VerifyNewTransaction checks a new transaction (not a balance modification) against the same rules as CreateTransaction without saving anything,
+// it is used by the dry run of the AI import tools, so a dry run accepts only what the real run would accept
+func (s *TransactionService) VerifyNewTransaction(c core.Context, transaction *models.Transaction, tagIds []int64) error {
+	if transaction.Uid <= 0 {
+		return errs.ErrUserIdInvalid
+	}
+
+	if transaction.Type == models.TRANSACTION_DB_TYPE_MODIFY_BALANCE {
+		return errs.ErrTransactionTypeInvalid
+	}
+
+	err := s.isAccountIdValid(transaction)
 
 	if err != nil {
 		return err
 	}
 
+	tagIds = utils.ToUniqueInt64Slice(tagIds)
+	transactionTagIndexes := make([]*models.TransactionTagIndex, len(tagIds))
+
+	for i := 0; i < len(tagIds); i++ {
+		transactionTagIndexes[i] = &models.TransactionTagIndex{
+			Uid:     transaction.Uid,
+			TagId:   tagIds[i],
+			Deleted: false,
+		}
+	}
+
+	return s.UserDataDB(transaction.Uid).DoTransaction(c, func(sess *xorm.Session) error {
+		sourceAccount, destinationAccount, err := s.verifyNewTransaction(sess, transaction, transactionTagIndexes, tagIds, nil)
+
+		if err != nil {
+			return err
+		}
+
+		return s.verifyNotBeforeBalanceModification(c, sess, transaction, sourceAccount, destinationAccount)
+	})
+}
+
+// verifyNewTransaction checks the accounts, the category, the tags and the pictures of a new transaction, it returns the source and the destination account
+func (s *TransactionService) verifyNewTransaction(sess *xorm.Session, transaction *models.Transaction, transactionTagIndexes []*models.TransactionTagIndex, tagIds []int64, pictureIds []int64) (*models.Account, *models.Account, error) {
+	// Get and verify source and destination account
+	sourceAccount, destinationAccount, err := s.getAccountModels(sess, transaction)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if sourceAccount.Hidden || (destinationAccount != nil && destinationAccount.Hidden) {
-		return errs.ErrCannotAddTransactionToHiddenAccount
+		return nil, nil, errs.ErrCannotAddTransactionToHiddenAccount
 	}
 
 	if sourceAccount.Type == models.ACCOUNT_TYPE_MULTI_SUB_ACCOUNTS || (destinationAccount != nil && destinationAccount.Type == models.ACCOUNT_TYPE_MULTI_SUB_ACCOUNTS) {
-		return errs.ErrCannotAddTransactionToParentAccount
+		return nil, nil, errs.ErrCannotAddTransactionToParentAccount
 	}
 
 	if (transaction.Type == models.TRANSACTION_DB_TYPE_TRANSFER_OUT || transaction.Type == models.TRANSACTION_DB_TYPE_TRANSFER_IN) &&
 		sourceAccount.Currency == destinationAccount.Currency && transaction.Amount != transaction.RelatedAccountAmount {
-		return errs.ErrTransactionSourceAndDestinationAmountNotEqual
+		return nil, nil, errs.ErrTransactionSourceAndDestinationAmountNotEqual
 	}
 
 	if (transaction.Type == models.TRANSACTION_DB_TYPE_TRANSFER_OUT || transaction.Type == models.TRANSACTION_DB_TYPE_TRANSFER_IN) &&
 		(transaction.Amount < 0 || transaction.RelatedAccountAmount < 0) {
-		return errs.ErrTransferTransactionAmountCannotBeLessThanZero
+		return nil, nil, errs.ErrTransferTransactionAmountCannotBeLessThanZero
 	}
 
 	// Get and verify category
 	err = s.isCategoryValid(sess, transaction)
 
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	// Get and verify tags
 	err = s.isTagsValid(sess, transaction.Uid, transactionTagIndexes, tagIds)
 
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	// Get and verify pictures
 	err = s.isPicturesValid(sess, transaction, pictureIds)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sourceAccount, destinationAccount, nil
+}
+
+// verifyNotBeforeBalanceModification checks that a transaction which is not a balance modification is not added before a balance modification transaction of its accounts
+func (s *TransactionService) verifyNotBeforeBalanceModification(c core.Context, sess *xorm.Session, transaction *models.Transaction, sourceAccount *models.Account, destinationAccount *models.Account) error {
+	var otherTransactionExists bool
+	var err error
+
+	if destinationAccount != nil && sourceAccount.AccountId != destinationAccount.AccountId {
+		otherTransactionExists, err = sess.Cols("uid", "deleted", "account_id").Where("uid=? AND deleted=? AND type=? AND (account_id=? OR account_id=?) AND transaction_time>=?", transaction.Uid, false, models.TRANSACTION_DB_TYPE_MODIFY_BALANCE, sourceAccount.AccountId, destinationAccount.AccountId, transaction.TransactionTime).Limit(1).Exist(&models.Transaction{})
+	} else {
+		otherTransactionExists, err = sess.Cols("uid", "deleted", "account_id").Where("uid=? AND deleted=? AND type=? AND account_id=? AND transaction_time>=?", transaction.Uid, false, models.TRANSACTION_DB_TYPE_MODIFY_BALANCE, sourceAccount.AccountId, transaction.TransactionTime).Limit(1).Exist(&models.Transaction{})
+	}
+
+	if err != nil {
+		log.Errorf(c, "[transactions.verifyNotBeforeBalanceModification] failed to get whether other transactions exist, because %s", err.Error())
+		return err
+	} else if otherTransactionExists {
+		return errs.ErrCannotAddTransactionBeforeBalanceModificationTransaction
+	}
+
+	return nil
+}
+
+func (s *TransactionService) doCreateTransaction(c core.Context, database *datastore.Database, sess *xorm.Session, transaction *models.Transaction, transactionTagIndexes []*models.TransactionTagIndex, tagIds []int64, pictureIds []int64, pictureUpdateModel *models.TransactionPictureInfo) error {
+	// Verify the accounts, the category, the tags and the pictures
+	sourceAccount, destinationAccount, err := s.verifyNewTransaction(sess, transaction, transactionTagIndexes, tagIds, pictureIds)
 
 	if err != nil {
 		return err
@@ -2683,19 +2755,10 @@ func (s *TransactionService) doCreateTransaction(c core.Context, database *datas
 		transaction.RelatedAccountId = transaction.AccountId
 		transaction.RelatedAccountAmount = relatedAccountAmount
 	} else { // Not allow to add transaction before balance modification transaction
-		otherTransactionExists := false
-
-		if destinationAccount != nil && sourceAccount.AccountId != destinationAccount.AccountId {
-			otherTransactionExists, err = sess.Cols("uid", "deleted", "account_id").Where("uid=? AND deleted=? AND type=? AND (account_id=? OR account_id=?) AND transaction_time>=?", transaction.Uid, false, models.TRANSACTION_DB_TYPE_MODIFY_BALANCE, sourceAccount.AccountId, destinationAccount.AccountId, transaction.TransactionTime).Limit(1).Exist(&models.Transaction{})
-		} else {
-			otherTransactionExists, err = sess.Cols("uid", "deleted", "account_id").Where("uid=? AND deleted=? AND type=? AND account_id=? AND transaction_time>=?", transaction.Uid, false, models.TRANSACTION_DB_TYPE_MODIFY_BALANCE, sourceAccount.AccountId, transaction.TransactionTime).Limit(1).Exist(&models.Transaction{})
-		}
+		err = s.verifyNotBeforeBalanceModification(c, sess, transaction, sourceAccount, destinationAccount)
 
 		if err != nil {
-			log.Errorf(c, "[transactions.doCreateTransaction] failed to get whether other transactions exist, because %s", err.Error())
 			return err
-		} else if otherTransactionExists {
-			return errs.ErrCannotAddTransactionBeforeBalanceModificationTransaction
 		}
 	}
 

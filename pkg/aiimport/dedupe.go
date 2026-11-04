@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -123,12 +124,44 @@ func NormalizeMerchant(comment string, maxLength int) string {
 	return merchant
 }
 
-// CommentsMatch returns whether the normalized comments are equal or one is contained in the other
+// CommentsMatch returns whether the normalized comments are equal or one is contained in the other.
+// A comment without characters to compare (empty or only the origin suffix) says nothing about the merchant, so it never matches by itself
 func CommentsMatch(comment1 string, comment2 string) bool {
 	normalized1 := NormalizeComment(comment1)
 	normalized2 := NormalizeComment(comment2)
 
+	if normalized1 == "" || normalized2 == "" {
+		return false
+	}
+
 	return strings.Contains(normalized1, normalized2) || strings.Contains(normalized2, normalized1)
+}
+
+// IsDuplicateByComment returns whether two transactions of the same account, type and amount are duplicates according to their comments and times.
+// The times must be at most 1 day apart. When any of the comments is empty (after normalizing) they are duplicates only if both are empty and
+// both happen the same calendar day in the location, otherwise the comments must match
+func IsDuplicateByComment(comment1 string, unixTime1 int64, comment2 string, unixTime2 int64, location *time.Location) bool {
+	if !IsInDuplicateWindow(unixTime1, unixTime2) {
+		return false
+	}
+
+	if NormalizeComment(comment1) == "" || NormalizeComment(comment2) == "" {
+		return NormalizeComment(comment1) == "" && NormalizeComment(comment2) == "" && IsSameCalendarDay(unixTime1, unixTime2, location)
+	}
+
+	return CommentsMatch(comment1, comment2)
+}
+
+// IsSameCalendarDay returns whether the two unix times (in seconds) are in the same calendar day of the location
+func IsSameCalendarDay(unixTime1 int64, unixTime2 int64, location *time.Location) bool {
+	if location == nil {
+		location = time.UTC
+	}
+
+	year1, month1, day1 := time.Unix(unixTime1, 0).In(location).Date()
+	year2, month2, day2 := time.Unix(unixTime2, 0).In(location).Date()
+
+	return year1 == year2 && month1 == month2 && day1 == day2
 }
 
 // IsInDuplicateWindow returns whether the two transaction times (unix time in seconds) are at most 1 day apart

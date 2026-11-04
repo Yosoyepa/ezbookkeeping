@@ -27,8 +27,7 @@ const (
 
 // Limits of the inbox
 const (
-	InboxItemStatementMaxFileSize  = 20 * 1024 * 1024
-	InboxItemResultTransactionsMax = 2048
+	InboxItemStatementMaxFileSize = 20 * 1024 * 1024
 )
 
 // InboxStatementFileExtensions contains the file extensions (and content types) allowed for statements
@@ -53,7 +52,7 @@ type InboxItem struct {
 	FileExtension        string `xorm:"VARCHAR(10) NOT NULL"`
 	OriginalFileName     string `xorm:"VARCHAR(255)"`
 	Note                 string `xorm:"VARCHAR(255)"`
-	ResultTransactionIds string `xorm:"VARCHAR(2048)"`
+	ResultTransactionIds string `xorm:"TEXT"`
 	ProcessedNote        string `xorm:"VARCHAR(1024)"`
 	CreatedIp            string `xorm:"VARCHAR(39)"`
 	CreatedUnixTime      int64  `xorm:"INDEX(IDX_inbox_item_uid_deleted_status_created)"`
@@ -138,23 +137,34 @@ func (i *InboxItem) GetResultTransactionIds() []int64 {
 	return ids
 }
 
-// FormatInboxItemResultTransactionIds returns the textual representation of the transaction ids stored in an inbox item
+// FormatInboxItemResultTransactionIds returns the textual representation of the transaction ids stored in an inbox item, all the ids are kept
 func FormatInboxItemResultTransactionIds(transactionIds []int64) string {
 	items := make([]string, 0, len(transactionIds))
-	length := 0
 
 	for _, id := range transactionIds {
-		idStr := utils.Int64ToString(id)
-
-		if length+len(idStr)+1 > InboxItemResultTransactionsMax {
-			break
-		}
-
-		items = append(items, idStr)
-		length += len(idStr) + 1
+		items = append(items, utils.Int64ToString(id))
 	}
 
 	return strings.Join(items, ",")
+}
+
+// MergeInboxItemResultTransactionIds returns the ids of the first list followed by the ids of the second list which are not in the first one
+func MergeInboxItemResultTransactionIds(previousIds []int64, newIds []int64) []int64 {
+	merged := make([]int64, 0, len(previousIds)+len(newIds))
+	seen := make(map[int64]bool, len(previousIds)+len(newIds))
+
+	for _, ids := range [][]int64{previousIds, newIds} {
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+
+			seen[id] = true
+			merged = append(merged, id)
+		}
+	}
+
+	return merged
 }
 
 // ToInboxItemInfoResponse returns a view-object according to database model

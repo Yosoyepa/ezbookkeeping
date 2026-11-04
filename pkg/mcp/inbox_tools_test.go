@@ -295,7 +295,21 @@ func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T)
 	_, _, err = aiimport.ParseDownloadToken(env.Config.SecretKey, token, time.Now().Add(15*time.Minute+time.Minute))
 	assert.NotNil(t, err)
 
-	// a big file is not embedded
+	assert.Equal(t, true, meta["content_included"])
+	assert.Nil(t, meta["content_note"])
+
+	// H9: a file of exactly 10 MB is still embedded
+	limit := env.NewStatement("pdf", bytes.Repeat([]byte{1}, maxEmbeddedInboxFileSize))
+	result, err = callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(limit.ItemId)})
+	assert.Nil(t, err)
+	assert.Equal(t, 2, len(result.Content))
+	assert.Equal(t, "resource", result.Content[1]["type"])
+	meta = textOf(t, result)
+	assert.Equal(t, true, meta["content_included"])
+	assert.NotEmpty(t, meta["download_url"])
+	assert.Nil(t, meta["content_note"])
+
+	// H9: above 10 MB (the upload limit is 20 MB) only the download url is given, with a text which explains it
 	big := env.NewStatement("xlsx", bytes.Repeat([]byte{1}, maxEmbeddedInboxFileSize+1))
 	result, err = callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(big.ItemId)})
 	assert.Nil(t, err)
@@ -303,6 +317,17 @@ func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T)
 	meta = textOf(t, result)
 	assert.Equal(t, false, meta["content_included"])
 	assert.NotEmpty(t, meta["download_url"])
+	assert.Equal(t, float64(maxEmbeddedInboxFileSize+1), meta["size_bytes"])
+	assert.Contains(t, meta["content_note"], "10 MB")
+	assert.Contains(t, meta["content_note"], "download_url")
+
+	// without a root url there is no download url, and the text says so
+	env.Config.RootUrl = ""
+	result, err = callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(big.ItemId)})
+	assert.Nil(t, err)
+	meta = textOf(t, result)
+	assert.Nil(t, meta["download_url"])
+	assert.Contains(t, meta["content_note"], "root_url")
 }
 
 func mustCall(t *testing.T, env *aitest.Env, name string, arguments any) *testToolResult {
@@ -505,6 +530,52 @@ func TestAddTransactionsBatch_ProcessesTheInboxStatement(t *testing.T) {
 	parsed = textOf(t, result)
 	assert.Equal(t, float64(0), parsed["created"])
 	assert.Equal(t, "pending", parsed["inbox_item_status"])
+}
+
+// H4: if a row fails the statement stays pending, the created ids are saved and the response says what to do
+func TestAddTransactionsBatch_PartialErrorsKeepTheInboxStatementPending(t *testing.T) {
+	initializeMCPContainerTest(t)
+	env := aitest.NewEnv(t)
+
+	statement := env.NewStatement("csv", []byte("fecha;valor\n"))
+	id := utils.Int64ToString(statement.ItemId)
+	broken := expenseArgs("12.500", "Tinto", "2026-10-16T08:30:00-05:00")
+	broken["category_name"] = "Videojuegos"
+
+	args := batchArgs([]any{expenseArgs("45.900", "Éxito Suba", "2026-10-15T12:00:00-05:00"), broken}, "bancolombia-2026-10", false)
+	args["inbox_item_id"] = id
+
+	result, err := callTool(t, env, "add_transactions_batch", args)
+	assert.Nil(t, err)
+	parsed := textOf(t, result)
+	assert.Equal(t, float64(1), parsed["created"])
+	assert.Equal(t, float64(1), parsed["errors"])
+	assert.Equal(t, "pending", parsed["inbox_item_status"])
+	assert.Contains(t, parsed["next_step"], "fix the failed rows and call again")
+	assert.Equal(t, "pending", result.StructuredContent["inbox_item_status"])
+
+	item, _ := services.InboxItems.GetInboxItemByItemId(env.Ctx, aitest.Uid, statement.ItemId)
+	assert.Equal(t, models.INBOX_ITEM_STATUS_PENDING, item.Status)
+	assert.Equal(t, 1, len(item.GetResultTransactionIds()))
+	assert.Contains(t, item.ProcessedNote, "row 1:")
+
+	// the fixed row completes the item
+	broken["category_name"] = "Mercado"
+	args = batchArgs([]any{expenseArgs("45.900", "Éxito Suba", "2026-10-15T12:00:00-05:00"), broken}, "bancolombia-2026-10", false)
+	args["inbox_item_id"] = id
+
+	result, err = callTool(t, env, "add_transactions_batch", args)
+	assert.Nil(t, err)
+	parsed = textOf(t, result)
+	assert.Equal(t, float64(1), parsed["created"])
+	assert.Equal(t, float64(1), parsed["duplicates"])
+	assert.Equal(t, "processed", parsed["inbox_item_status"])
+	assert.Nil(t, parsed["next_step"])
+
+	item, _ = services.InboxItems.GetInboxItemByItemId(env.Ctx, aitest.Uid, statement.ItemId)
+	assert.Equal(t, models.INBOX_ITEM_STATUS_PROCESSED, item.Status)
+	assert.Equal(t, 2, len(item.GetResultTransactionIds()))
+	assert.Equal(t, int64(2), env.CountTransactions())
 }
 
 func TestAddTransactionsBatch_DryRunAndValidation(t *testing.T) {

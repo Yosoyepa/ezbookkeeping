@@ -2,7 +2,9 @@ package aiimport
 
 import (
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -201,6 +203,187 @@ func TestImport_DuplicateOfExistingTransaction(t *testing.T) {
 	for _, row := range result.Rows[1:] {
 		assert.Equal(t, RowStatusCreated, row.Status)
 	}
+}
+
+// H1: a description which is empty (or only has the origin suffix) is not a wildcard that matches any merchant
+func TestImport_EmptyCommentIsNotAWildcard(t *testing.T) {
+	// case 1: the existing transaction or the row has a description and the other one does not -> not a duplicate
+	env := aitest.NewEnv(t)
+	seed, err := Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "Éxito Suba", "2026-10-15T12:00:00-05:00")}, importOptions("manual", false, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, seed.Created)
+
+	result, err := Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "", "2026-10-15T14:00:00-05:00")}, importOptions("extracto", true, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, result.Created, "a row without description is not a duplicate of an existing transaction with description")
+	assert.Equal(t, 0, result.Duplicates)
+
+	env = aitest.NewEnv(t)
+	seed, err = Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "", "2026-10-15T12:00:00-05:00")}, importOptions("manual", false, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, seed.Created)
+
+	result, err = Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "Carulla", "2026-10-15T14:00:00-05:00")}, importOptions("extracto", true, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, result.Created, "a row with description is not a duplicate of an existing transaction without description")
+	assert.Equal(t, 0, result.Duplicates)
+
+	// case 2: both without description, same account, type and amount, the same calendar day (in the time zone of the row) -> duplicate
+	result, err = Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "", "2026-10-15T20:00:00-05:00")}, importOptions("extracto", true, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 0, result.Created)
+	assert.Equal(t, 1, result.Duplicates)
+	assert.Equal(t, RowStatusDuplicate, result.Rows[0].Status)
+	assert.NotEmpty(t, result.Rows[0].DuplicateOf)
+
+	// case 3: both without description but in different calendar days (less than 24 hours apart) -> not a duplicate
+	env = aitest.NewEnv(t)
+	seed, err = Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "", "2026-10-15T23:00:00-05:00")}, importOptions("manual", false, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, seed.Created)
+
+	result, err = Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{newExpenseRow("45.900", "", "2026-10-16T08:00:00-05:00")}, importOptions("extracto", true, false))
+	assert.Nil(t, err)
+	assert.Equal(t, 1, result.Created, "the next calendar day is not a duplicate when there is no description")
+	assert.Equal(t, 0, result.Duplicates)
+}
+
+func TestImport_EmptyCommentIsNotAWildcardInTheSameBatch(t *testing.T) {
+	// a row with description and a row without it
+	env := aitest.NewEnv(t)
+	result, err := Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{
+		newExpenseRow("8.000", "", "2026-10-15T08:00:00-05:00"),
+		newExpenseRow("8.000", "Tinto", "2026-10-15T09:00:00-05:00"),
+		newExpenseRow("8.000", "", "2026-10-15T10:00:00-05:00"), // same day as row 0, both without description -> duplicate of row 0
+		newExpenseRow("8.000", "", "2026-10-16T06:00:00-05:00"), // 22 hours after row 0 but the next calendar day -> new
+	}, importOptions("x", true, false))
+	assert.Nil(t, err)
+
+	assert.Equal(t, RowStatusCreated, result.Rows[0].Status)
+	assert.Equal(t, RowStatusCreated, result.Rows[1].Status)
+	assert.Equal(t, RowStatusDuplicate, result.Rows[2].Status)
+	assert.Equal(t, "row:0", result.Rows[2].DuplicateOf)
+	assert.Equal(t, RowStatusCreated, result.Rows[3].Status)
+	assert.Equal(t, 3, result.Created)
+	assert.Equal(t, 1, result.Duplicates)
+	assert.Equal(t, int64(3), env.CountTransactions())
+
+	// the dry run classifies the same way
+	env = aitest.NewEnv(t)
+	dry, err := Import(env.Ctx, aitest.Services{}, env.User, []*TxRow{
+		newExpenseRow("8.000", "Tinto", "2026-10-15T08:00:00-05:00"),
+		newExpenseRow("8.000", "", "2026-10-15T09:00:00-05:00"),
+	}, importOptions("x", true, true))
+	assert.Nil(t, err)
+	assert.Equal(t, 2, dry.WouldCreate)
+	assert.Equal(t, 0, dry.Duplicates)
+}
+
+// H5: the dry run applies the same domain validations as the write
+func TestImport_DryRunRejectsWhatTheWriteRejects(t *testing.T) {
+	env := aitest.NewEnv(t)
+
+	// a balance modification in the account Efectivo on the 20th: nothing can be added to it before
+	env.Insert(&models.Transaction{
+		TransactionId:    9001,
+		Uid:              aitest.Uid,
+		Type:             models.TRANSACTION_DB_TYPE_MODIFY_BALANCE,
+		TransactionTime:  utils.GetMinTransactionTimeFromUnixTime(time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC).Unix()),
+		AccountId:        env.Cash,
+		RelatedAccountId: env.Cash,
+	})
+
+	transfer := func(destinationAccount string, amount string, destinationAmount string) *TxRow {
+		return &TxRow{Type: TransactionTypeTransfer, Time: "2026-10-25T12:00:00-05:00", SecondaryCategoryName: "Transferencia", AccountName: "Efectivo", Amount: amount, DestinationAccountName: destinationAccount, DestinationAmount: destinationAmount}
+	}
+
+	rows := []*TxRow{
+		transfer("Bancolombia", "1.000", "1.000"),                                  // 0: valid
+		transfer("Bancolombia", "1.000", "2.000"),                                  // 1: the same currency with other amounts
+		transfer("Efectivo", "1.000", "1.000"),                                     // 2: the same account as source and destination
+		transfer("Dólares", "1.000", "250"),                                        // 3: other currency, the amounts can differ -> valid
+		newExpenseRow("5.000", "antes del ajuste", "2026-10-10T12:00:00-05:00"),    // 4: before the balance modification of Efectivo
+		{Type: TransactionTypeExpense, Time: "2026-10-10T12:00:00-05:00", SecondaryCategoryName: "Restaurantes", AccountName: "Bancolombia", Amount: "5.000", Comment: "otra cuenta"}, // 5: other account -> valid
+	}
+	expected := []string{RowStatusWouldCreate, RowStatusError, RowStatusError, RowStatusWouldCreate, RowStatusError, RowStatusWouldCreate}
+
+	dry, err := Import(env.Ctx, aitest.Services{}, env.User, rows, importOptions("x", false, true))
+	assert.Nil(t, err)
+
+	for i, status := range expected {
+		assert.Equal(t, status, dry.Rows[i].Status, "dry run row %d", i)
+	}
+
+	assert.Contains(t, dry.Rows[1].Message, "amount not equal")
+	assert.Equal(t, 3, dry.WouldCreate)
+	assert.Equal(t, 3, dry.Errors)
+	assert.Equal(t, int64(1), env.CountTransactions()) // only the balance modification
+
+	// the real run gives the same classification
+	real, err := Import(env.Ctx, aitest.Services{}, env.User, rows, importOptions("x", false, false))
+	assert.Nil(t, err)
+
+	for i, status := range expected {
+		if status == RowStatusWouldCreate {
+			status = RowStatusCreated
+		}
+
+		assert.Equal(t, status, real.Rows[i].Status, "real run row %d", i)
+	}
+
+	assert.Equal(t, dry.Errors, real.Errors)
+	assert.Equal(t, dry.WouldCreate, real.Created)
+	assert.Equal(t, dry.Rows[1].Message, real.Rows[1].Message)
+}
+
+// H2: simultaneous imports of the same statement create each transaction once
+func TestImport_ConcurrentImportsOfTheSameRowsCreateThemOnce(t *testing.T) {
+	env := aitest.NewEnv(t)
+
+	const rowCount = 20
+	const callers = 6
+
+	// every row has its own amount and day, so no row is a duplicate of another row of the same statement
+	newRows := func() []*TxRow {
+		rows := make([]*TxRow, rowCount)
+
+		for i := range rows {
+			rows[i] = newExpenseRow(fmt.Sprintf("%d", 1000+i), "Compra", fmt.Sprintf("2026-10-%02dT12:00:00-05:00", i+1))
+		}
+
+		return rows
+	}
+
+	results := make([]*Result, callers)
+	errors := make([]error, callers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errors[i] = Import(env.Ctx, aitest.Services{}, env.User, newRows(), importOptions("bancolombia-2026-10", true, false))
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	created, duplicates := 0, 0
+
+	for i := 0; i < callers; i++ {
+		assert.Nil(t, errors[i])
+		created += results[i].Created
+		duplicates += results[i].Duplicates
+	}
+
+	assert.Equal(t, rowCount, created)
+	assert.Equal(t, rowCount*(callers-1), duplicates)
+	assert.Equal(t, int64(rowCount), env.CountTransactions())
+	assert.Equal(t, 1, countTagsNamed(t, env, AITagName))
 }
 
 func TestImport_DryRunWritesNothing(t *testing.T) {
