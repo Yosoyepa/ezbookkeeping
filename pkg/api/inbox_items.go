@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"net/http"
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/aiimport"
@@ -12,6 +14,9 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
+
+// inboxUploadBodyMargin is the size added to the biggest file allowed to get the max size of the body of an upload (the other parts of the multipart)
+const inboxUploadBodyMargin = 1024 * 1024
 
 // InboxItemsApi represents the inbox items api
 type InboxItemsApi struct {
@@ -37,10 +42,37 @@ func (a *InboxItemsApi) InboxItemUploadHandler(c *core.WebContext) (any, *errs.E
 		return nil, errs.ErrInboxItemStorageDisabled
 	}
 
+	// the limit is imposed on the whole body before parsing the multipart, so a big upload is rejected without being processed
+	maxBodySize := a.getMaxUploadBodySize()
+
+	if c.Request.ContentLength > maxBodySize {
+		log.Warnf(c, "[inbox_items.InboxItemUploadHandler] the request body size \"%d\" exceeds the maximum size \"%d\" for user \"uid:%d\"", c.Request.ContentLength, maxBodySize, uid)
+		return nil, errs.ErrExceedMaxInboxItemFileSize
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodySize)
 	form, err := c.MultipartForm()
 
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+
+		if errors.As(err, &maxBytesError) {
+			log.Warnf(c, "[inbox_items.InboxItemUploadHandler] the request body exceeds the maximum size \"%d\" for user \"uid:%d\"", maxBodySize, uid)
+			return nil, errs.ErrExceedMaxInboxItemFileSize
+		}
+
 		log.Errorf(c, "[inbox_items.InboxItemUploadHandler] failed to get multi-part form data for user \"uid:%d\", because %s", uid, err.Error())
+		return nil, errs.ErrParameterInvalid
+	}
+
+	fileCount := 0
+
+	for _, fileHeaders := range form.File {
+		fileCount += len(fileHeaders)
+	}
+
+	if fileCount > 1 {
+		log.Warnf(c, "[inbox_items.InboxItemUploadHandler] there are %d files in request, only one is allowed for user \"uid:%d\"", fileCount, uid)
 		return nil, errs.ErrParameterInvalid
 	}
 
@@ -127,6 +159,17 @@ func (a *InboxItemsApi) InboxItemUploadHandler(c *core.WebContext) (any, *errs.E
 	}
 
 	return a.getInboxItemInfoResponse(c, item)
+}
+
+// getMaxUploadBodySize returns the max size of the body of an upload: the biggest file allowed plus 1 MB for the other parts of the multipart
+func (a *InboxItemsApi) getMaxUploadBodySize() int64 {
+	maxFileSize := int64(models.InboxItemStatementMaxFileSize)
+
+	if receiptMaxFileSize := int64(a.CurrentConfig().MaxTransactionPictureFileSize); receiptMaxFileSize > maxFileSize {
+		maxFileSize = receiptMaxFileSize
+	}
+
+	return maxFileSize + inboxUploadBodyMargin
 }
 
 // InboxItemListHandler returns the inbox items of current user

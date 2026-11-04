@@ -260,6 +260,53 @@ func (s *InboxItemService) MarkInboxItemProcessed(c core.Context, uid int64, ite
 	return s.updateInboxItemStatus(c, uid, itemId, models.INBOX_ITEM_STATUS_PENDING, updateModel, "status", "result_transaction_ids", "processed_note", "processed_unix_time", "updated_unix_time")
 }
 
+// SaveInboxItemProgress saves the ids of the transactions created so far and the note with the rows which failed in a pending inbox item,
+// the item stays pending so the rows which failed can be fixed and sent again
+func (s *InboxItemService) SaveInboxItemProgress(c core.Context, uid int64, itemId int64, transactionIds []int64, processedNote string) error {
+	updateModel := &models.InboxItem{
+		ResultTransactionIds: models.FormatInboxItemResultTransactionIds(transactionIds),
+		ProcessedNote:        truncateRunes(processedNote, 1024),
+		UpdatedUnixTime:      time.Now().Unix(),
+	}
+
+	return s.updateInboxItemStatus(c, uid, itemId, models.INBOX_ITEM_STATUS_PENDING, updateModel, "result_transaction_ids", "processed_note", "updated_unix_time")
+}
+
+// ReserveInboxItem reserves a pending inbox item before writing the transactions of it: it is a conditional update pending -> pending which only
+// succeeds if the item has not been changed since it was read (expectedUpdatedUnixTime), so a concurrent change fails cleanly before anything is created
+func (s *InboxItemService) ReserveInboxItem(c core.Context, uid int64, itemId int64, expectedUpdatedUnixTime int64) error {
+	if uid <= 0 {
+		return errs.ErrUserIdInvalid
+	}
+
+	if itemId <= 0 {
+		return errs.ErrInboxItemIdInvalid
+	}
+
+	// the new value is always different from the expected one, even when both happen in the same second
+	newUpdatedUnixTime := time.Now().Unix()
+
+	if newUpdatedUnixTime <= expectedUpdatedUnixTime {
+		newUpdatedUnixTime = expectedUpdatedUnixTime + 1
+	}
+
+	updateModel := &models.InboxItem{
+		UpdatedUnixTime: newUpdatedUnixTime,
+	}
+
+	return s.UserDataDB(uid).DoTransaction(c, func(sess *xorm.Session) error {
+		updatedRows, err := sess.ID(itemId).Cols("updated_unix_time").Where("uid=? AND deleted=? AND status=? AND updated_unix_time=?", uid, false, models.INBOX_ITEM_STATUS_PENDING, expectedUpdatedUnixTime).Update(updateModel)
+
+		if err != nil {
+			return err
+		} else if updatedRows < 1 {
+			return errs.ErrInboxItemNotPending
+		}
+
+		return nil
+	})
+}
+
 // DiscardInboxItem marks a pending inbox item as discarded
 func (s *InboxItemService) DiscardInboxItem(c core.Context, uid int64, itemId int64, reason string) error {
 	now := time.Now().Unix()

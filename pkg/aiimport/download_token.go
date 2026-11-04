@@ -18,6 +18,12 @@ import (
 // DownloadTokenLifetime is the max lifetime of the download url of an inbox file
 const DownloadTokenLifetime = 15 * time.Minute
 
+// usedDownloadTokens remembers the tokens already used, in the memory of the process.
+//
+// KNOWN LIMITATION (accepted by scope): "single use" is only guaranteed while the process runs. After a restart of the server, or if the
+// next request reached another instance sharing the same secret key, a used token can be downloaded again until it expires (15 minutes at most).
+// The deployment of this fork is a single instance and the token only gives read access to one file of one user, so the nonce is not stored in
+// a shared store. If the server ever runs with several instances, the nonce must be consumed atomically in the database (or another shared store).
 var usedDownloadTokens = struct {
 	sync.Mutex
 	items map[string]int64

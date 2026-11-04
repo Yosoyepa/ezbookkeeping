@@ -41,6 +41,7 @@ type MCPGetInboxItemResponse struct {
 	SizeBytes            int      `json:"size_bytes" jsonschema_description:"Size of the file in bytes"`
 	DownloadUrl          string   `json:"download_url,omitempty" jsonschema_description:"Temporary url (valid 15 minutes, single use) to download the statement file, e.g. with curl, when the client cannot read the embedded resource"`
 	ContentIncluded      bool     `json:"content_included" jsonschema_description:"Whether the file content is included in this response"`
+	ContentNote          string   `json:"content_note,omitempty" jsonschema_description:"Why the file content is not included in this response (a pdf or spreadsheet bigger than 10 MB can only be downloaded with download_url)"`
 	ResultTransactionIds []string `json:"result_transaction_ids,omitempty" jsonschema_description:"Ids of the transactions created from this item"`
 	ProcessedNote        string   `json:"processed_note,omitempty" jsonschema_description:"Summary or reason saved when the item was processed or discarded"`
 }
@@ -61,7 +62,7 @@ func (h *mcpGetInboxItemToolHandler) Name() string {
 
 // Description returns the description of the MCP tool
 func (h *mcpGetInboxItemToolHandler) Description() string {
-	return "Get an item of the inbox with its file: a receipt returns the image, a csv/txt/ofx/qif statement returns its text, a pdf/xlsx statement returns an embedded resource and a temporary download url. Read the amounts, date and merchant only from the file, never guess them."
+	return "Get an item of the inbox with its file: a receipt returns the image, a csv/txt/ofx/qif statement returns its text, a pdf/xlsx statement returns an embedded resource (only up to 10 MB, bigger files only have the url) and a temporary download url. Read the amounts, date and merchant only from the file, never guess them."
 }
 
 // InputType returns the input type for the MCP tool request
@@ -134,6 +135,10 @@ func (h *mcpGetInboxItemToolHandler) Handle(c *core.WebContext, callToolReq *MCP
 
 	response.ContentIncluded = fileBlock != nil
 
+	if fileBlock == nil {
+		response.ContentNote = h.getNotEmbeddedNote(response)
+	}
+
 	content, err := json.Marshal(response)
 
 	if err != nil {
@@ -147,6 +152,17 @@ func (h *mcpGetInboxItemToolHandler) Handle(c *core.WebContext, callToolReq *MCP
 	}
 
 	return response, blocks, nil
+}
+
+// getNotEmbeddedNote explains why the file is not embedded in the response and how to get it
+func (h *mcpGetInboxItemToolHandler) getNotEmbeddedNote(response *MCPGetInboxItemResponse) string {
+	note := fmt.Sprintf("The file is %d bytes, bigger than the %d MB limit for embedding it in the response, so it is not included.", response.SizeBytes, maxEmbeddedInboxFileSize/(1024*1024))
+
+	if response.DownloadUrl != "" {
+		return note + " Download it from download_url (valid 15 minutes, single use), e.g. with curl, and read it locally."
+	}
+
+	return note + " The server has no root_url configured, so there is no download_url: download the file from the web app."
 }
 
 func (h *mcpGetInboxItemToolHandler) createDownloadUrl(config *settings.Config, uid int64, itemId int64) string {

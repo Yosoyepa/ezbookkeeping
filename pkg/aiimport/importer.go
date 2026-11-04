@@ -107,8 +107,16 @@ type importContext struct {
 	pictureLinked bool
 }
 
-// Import validates the rows and creates the transactions, the result has one entry per row
+// Import validates the rows and creates the transactions, the result has one entry per row.
+// The imports of the same user run one after the other (see lockUser)
 func Import(c core.Context, svc Services, user *models.User, rows []*TxRow, options *Options) (*Result, error) {
+	defer lockUser(user.Uid)()
+
+	return importLocked(c, svc, user, rows, options)
+}
+
+// importLocked is Import for callers which already hold the lock of the user
+func importLocked(c core.Context, svc Services, user *models.User, rows []*TxRow, options *Options) (*Result, error) {
 	uid := user.Uid
 
 	allAccounts, err := svc.GetAccountService().GetAllAccountsByUid(c, uid)
@@ -308,7 +316,7 @@ func (ic *importContext) importRow(c core.Context, index int, row *TxRow, option
 	}
 
 	if options.SkipDuplicates {
-		duplicateOf, err := ic.findDuplicate(c, transaction, row.Comment, transactionTime.Unix())
+		duplicateOf, err := ic.findDuplicate(c, transaction, row.Comment, transactionTime.Unix(), transactionTime.Location())
 
 		if err != nil {
 			return fail("failed to check duplicates: %s", err.Error())
@@ -317,12 +325,17 @@ func (ic *importContext) importRow(c core.Context, index int, row *TxRow, option
 		if duplicateOf != "" {
 			rowResult.Status = RowStatusDuplicate
 			rowResult.DuplicateOf = duplicateOf
-			rowResult.Message = "a similar transaction already exists (same account, type and amount within 1 day, and a similar description); use skip_duplicates=false to create it anyway"
+			rowResult.Message = "a similar transaction already exists (same account, type and amount within 1 day, and a similar description; without a description only the same day counts); use skip_duplicates=false to create it anyway"
 			return rowResult
 		}
 	}
 
 	if options.DryRun {
+		// the same domain rules as the real run (accounts, categories, tags, amounts of a transfer...), so a dry run does not accept what the write would reject
+		if err := ic.svc.GetTransactionService().VerifyNewTransaction(c, transaction, tagIds); err != nil {
+			return fail("failed to create the transaction: %s", err.Error())
+		}
+
 		rowResult.Status = RowStatusWouldCreate
 		ic.rememberAccepted(index, transaction, row.Comment, transactionTime.Unix())
 		return rowResult
@@ -413,11 +426,12 @@ func (ic *importContext) rememberAccepted(index int, transaction *models.Transac
 	})
 }
 
-// findDuplicate returns the reference of a transaction (an id or "row:N") which is a duplicate of the transaction, or empty if there is none
-func (ic *importContext) findDuplicate(c core.Context, transaction *models.Transaction, comment string, unixTime int64) (string, error) {
+// findDuplicate returns the reference of a transaction (an id or "row:N") which is a duplicate of the transaction, or empty if there is none.
+// The location is the time zone of the row, it defines the calendar day when there is no description to compare
+func (ic *importContext) findDuplicate(c core.Context, transaction *models.Transaction, comment string, unixTime int64, location *time.Location) (string, error) {
 	for _, accepted := range ic.accepted {
 		if accepted.accountId == transaction.AccountId && accepted.txType == transaction.Type && accepted.amount == transaction.Amount &&
-			IsInDuplicateWindow(accepted.unixTime, unixTime) && CommentsMatch(accepted.comment, comment) {
+			IsDuplicateByComment(accepted.comment, accepted.unixTime, comment, unixTime, location) {
 			return fmt.Sprintf("row:%d", accepted.index), nil
 		}
 	}
@@ -431,7 +445,7 @@ func (ic *importContext) findDuplicate(c core.Context, transaction *models.Trans
 	}
 
 	for _, candidate := range candidates {
-		if CommentsMatch(candidate.Comment, comment) {
+		if IsDuplicateByComment(candidate.Comment, utils.GetUnixTimeFromTransactionTime(candidate.TransactionTime), comment, unixTime, location) {
 			return utils.Int64ToString(candidate.TransactionId), nil
 		}
 	}

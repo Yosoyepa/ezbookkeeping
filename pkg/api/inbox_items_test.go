@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -168,6 +169,87 @@ func TestInboxItemsApi_UploadValidation(t *testing.T) {
 	c = newInboxTestContext(newUploadRequest(t, map[string]string{"kind": "2"}, "x.pdf", []byte("x")), nil)
 	_, err = InboxItems.InboxItemUploadHandler(c)
 	assert.Equal(t, errs.ErrInboxItemStorageDisabled, err)
+}
+
+// countingBody counts the bytes read from the body of a request
+type countingBody struct {
+	io.ReadCloser
+	bytesRead int64
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.bytesRead += int64(n)
+
+	return n, err
+}
+
+// H8: the limit is imposed on the whole body before parsing the multipart
+func TestInboxItemsApi_UploadBodyIsLimitedBeforeParsing(t *testing.T) {
+	aitest.NewEnv(t)
+
+	maxBodySize := int64(models.InboxItemStatementMaxFileSize + 1024*1024)
+	bigContent := bytes.Repeat([]byte{1}, 25*1024*1024)
+
+	// the size is announced (Content-Length): it is rejected without reading the body
+	request := newUploadRequest(t, map[string]string{"kind": "2"}, "x.pdf", bigContent)
+	body := &countingBody{ReadCloser: request.Body}
+	request.Body = body
+
+	result, err := InboxItems.InboxItemUploadHandler(newInboxTestContext(request, nil))
+	assert.Nil(t, result)
+	assert.Equal(t, errs.ErrExceedMaxInboxItemFileSize, err)
+	assert.Equal(t, int64(0), body.bytesRead)
+
+	// the size is not announced (chunked): the reader stops at the limit, the rest of the body is never read
+	request = newUploadRequest(t, map[string]string{"kind": "2"}, "x.pdf", bigContent)
+	request.ContentLength = -1
+	body = &countingBody{ReadCloser: request.Body}
+	request.Body = body
+
+	result, err = InboxItems.InboxItemUploadHandler(newInboxTestContext(request, nil))
+	assert.Nil(t, result)
+	assert.Equal(t, errs.ErrExceedMaxInboxItemFileSize, err)
+	assert.LessOrEqual(t, body.bytesRead, maxBodySize+1)
+	assert.Less(t, body.bytesRead, int64(len(bigContent)))
+
+	// nothing was saved
+	stats, statsErr := InboxItems.InboxItemStatsHandler(newInboxTestContext(httptest.NewRequest(http.MethodGet, "/", nil), nil))
+	assert.Nil(t, statsErr)
+	assert.Equal(t, &models.InboxItemStatsResponse{}, stats)
+
+	// a statement of the maximum size still fits in the body
+	uploaded := uploadForTest(t, "2", "extracto.pdf", bytes.Repeat([]byte{1}, models.InboxItemStatementMaxFileSize), "")
+	assert.Equal(t, models.INBOX_ITEM_KIND_STATEMENT, uploaded.Kind)
+}
+
+// H8: more than one file is rejected
+func TestInboxItemsApi_UploadRejectsMoreThanOneFile(t *testing.T) {
+	aitest.NewEnv(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	assert.Nil(t, writer.WriteField("kind", "1"))
+
+	for _, fieldName := range []string{"file", "file", "other"} {
+		part, err := writer.CreateFormFile(fieldName, "r.jpg")
+		assert.Nil(t, err)
+		_, err = part.Write(aitest.FakeJpeg)
+		assert.Nil(t, err)
+	}
+
+	assert.Nil(t, writer.Close())
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/inbox/items/upload.json", body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	result, err := InboxItems.InboxItemUploadHandler(newInboxTestContext(request, nil))
+	assert.Nil(t, result)
+	assert.Equal(t, errs.ErrParameterInvalid, err)
+
+	stats, statsErr := InboxItems.InboxItemStatsHandler(newInboxTestContext(httptest.NewRequest(http.MethodGet, "/", nil), nil))
+	assert.Nil(t, statsErr)
+	assert.Equal(t, &models.InboxItemStatsResponse{}, stats)
 }
 
 func TestInboxItemsApi_DiscardReopenDelete(t *testing.T) {
