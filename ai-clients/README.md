@@ -93,9 +93,9 @@ Los comandos no crean cuentas: créalas en la web antes del primer uso.
 1. Inicia sesión en `http://127.0.0.1:8080/desktop` y abre la lista de cuentas: el botón **Cuentas** de la barra superior es solo un icono, y la ruta directa es `http://127.0.0.1:8080/desktop#/account/list`. Pulsa **Añadir** en esa lista (no «Añadir transacción» de la barra lateral).
 2. Escribe el **nombre** (por ejemplo «Efectivo» o «Bancolombia Ahorros»).
 3. Elige la **categoría de cuenta**: es obligatoria. Usa «Efectivo» para el efectivo y «Cuentas de ahorros» para una cuenta bancaria.
-4. Elige la **divisa** «Peso Colombiano» (COP) y guarda.
+4. Elige la **divisa** «Peso Colombiano» (COP). Si pones un **saldo inicial**, fíjale una **fecha anterior** al recibo o extracto más antiguo que vayas a importar (por ejemplo, el 1.º del mes): ezBookkeeping rechaza movimientos anteriores al saldo inicial («cannot add transaction before balance modification transaction»), y después ya no deja moverlo. Guarda.
 
-Las categorías de transacción (la jerarquía categoría → subcategoría) se editan en **Ajustes** (el icono de tu usuario, arriba a la derecha) → menú lateral **Datos básicos** → **Categorías de transacciones**. Las categorías de cuenta del paso 3 (Efectivo, Cuentas de ahorros…) son otra lista, fija, que trae upstream.
+Si te registraste sin el interruptor de categorías predeterminadas, añádelas después: en el celular, **Ajustes → Categorías de transacciones → Gastos → «Añadir categorías predefinidas»** (y lo mismo en Ingresos). Las categorías de transacción (la jerarquía categoría → subcategoría) se editan en **Ajustes** (el icono de tu usuario, arriba a la derecha) → menú lateral **Datos básicos** → **Categorías de transacciones**. Las categorías de cuenta del paso 3 (Efectivo, Cuentas de ahorros…) son otra lista, fija, que trae upstream.
 
 ### El token MCP
 
