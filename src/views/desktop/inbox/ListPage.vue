@@ -8,8 +8,14 @@
                             <div class="title-and-toolbar d-flex align-center">
                                 <span>{{ tt('Inbox') }}</span>
                                 <v-btn class="ms-3" color="default" variant="outlined"
-                                       :disabled="loading || uploading" :loading="uploading"
+                                       :disabled="loading || uploading || uploadingReceipts" :loading="uploading"
                                        @click="openStatementPicker">{{ tt('Upload Statement') }}</v-btn>
+                                <v-btn class="inbox-upload-receipts ms-3" color="default" variant="outlined"
+                                       :disabled="loading || uploading" :loading="uploadingReceipts"
+                                       @click="openReceiptPicker">{{ tt('Upload Receipts') }}</v-btn>
+                                <span class="inbox-upload-progress ms-3 text-body-2" v-if="uploadingReceipts">
+                                    {{ tt('Uploading receipts') }} ({{ uploadedCount }}/{{ uploadTotal }})
+                                </span>
                                 <v-spacer/>
                                 <v-btn density="compact" color="default" variant="text" class="ms-2"
                                        :aria-label="tt('Refresh')" :icon="true"
@@ -29,6 +35,7 @@
                             <v-tab :value="InboxItemStatus.Processed">{{ tt('Processed') }}</v-tab>
                             <v-tab :value="InboxItemStatus.Discarded">{{ tt('Discarded') }}</v-tab>
                         </v-tabs>
+                        <v-progress-linear :model-value="uploadPercent" v-if="uploadingReceipts" />
                         <v-divider/>
 
                         <v-table class="inbox-table table-striped" :hover="!loading">
@@ -108,6 +115,7 @@
             </v-row>
 
             <input ref="statementInput" type="file" style="display: none" :accept="INBOX_STATEMENT_FILE_ACCEPT" @change="onStatementSelected($event)" />
+            <input ref="receiptInput" type="file" style="display: none" accept="image/*" multiple @change="onReceiptsSelected($event)" />
             <v-dialog width="480" scrollable v-model="showTransactionsDialog">
                 <v-card>
                     <v-card-title>{{ tt('Transactions') }} ({{ selectedTransactionIds.length }})</v-card-title>
@@ -137,7 +145,7 @@ import ConfirmDialog from '@/components/desktop/ConfirmDialog.vue';
 import SnackBar from '@/components/desktop/SnackBar.vue';
 import EditDialog from '@/views/desktop/transactions/list/dialogs/EditDialog.vue';
 
-import { ref, useTemplateRef } from 'vue';
+import { ref, computed, useTemplateRef } from 'vue';
 
 import { useI18n } from '@/locales/helpers.ts';
 
@@ -154,6 +162,9 @@ import {
 } from '@/models/inbox.ts';
 
 import { parseDateTimeFromUnixTime } from '@/lib/datetime.ts';
+import { generateRandomUUID } from '@/lib/misc.ts';
+import { compressReceiptImage } from '@/lib/receiptImage.ts';
+import { uploadReceiptQueue } from '@/lib/receiptUploadQueue.ts';
 
 import {
     mdiRefresh,
@@ -176,6 +187,12 @@ const confirmDialog = useTemplateRef<ConfirmDialogType>('confirmDialog');
 const snackbar = useTemplateRef<SnackBarType>('snackbar');
 const editDialog = useTemplateRef<EditDialogType>('editDialog');
 const statementInput = useTemplateRef<HTMLInputElement>('statementInput');
+const receiptInput = useTemplateRef<HTMLInputElement>('receiptInput');
+
+interface ReceiptFile {
+    readonly id: string;
+    readonly file: File;
+}
 
 const showTransactionsDialog = ref<boolean>(false);
 const selectedTransactionIds = ref<string[]>([]);
@@ -188,6 +205,12 @@ const loading = ref<boolean>(true);
 const loadingMore = ref<boolean>(false);
 const updating = ref<boolean>(false);
 const uploading = ref<boolean>(false);
+const uploadingReceipts = ref<boolean>(false);
+const uploadedCount = ref<number>(0);
+const uploadTotal = ref<number>(0);
+const uploadFraction = ref<number>(0);
+
+const uploadPercent = computed<number>(() => uploadTotal.value > 0 ? ((uploadedCount.value + uploadFraction.value) / uploadTotal.value) * 100 : 0);
 
 // Loads one page of the current status. A response for a status that is no longer selected is ignored.
 function fetchPage(pageNumber: number): Promise<void> {
@@ -310,6 +333,92 @@ function onStatementSelected(event: Event): void {
         if (!error.processed) {
             snackbar.value?.showError(error);
         }
+    });
+}
+
+function openReceiptPicker(): void {
+    if (uploading.value || uploadingReceipts.value) {
+        return;
+    }
+
+    receiptInput.value?.click();
+}
+
+function onReceiptsSelected(event: Event): void {
+    const el = event.target as HTMLInputElement;
+
+    if (!el.files || !el.files.length) {
+        return;
+    }
+
+    const queue: ReceiptFile[] = Array.from(el.files).map(file => ({ id: generateRandomUUID(), file: file }));
+
+    // clear the input so that the same images can be selected again
+    el.value = '';
+
+    uploadReceipts(queue);
+}
+
+// The images are uploaded one by one. The first failure stops the queue, and the images already uploaded stay in the inbox.
+function uploadReceipts(queue: ReceiptFile[]): void {
+    uploadingReceipts.value = true;
+    uploadedCount.value = 0;
+    uploadTotal.value = queue.length;
+    uploadFraction.value = 0;
+
+    // the new receipts are pending, so show the pending list
+    if (status.value !== InboxItemStatus.Pending) {
+        status.value = InboxItemStatus.Pending;
+        items.value = [];
+        totalCount.value = 0;
+    }
+
+    uploadReceiptQueue<ReceiptFile>({
+        getNextPhoto: () => queue[0],
+        uploadPhoto: receipt => {
+            uploadFraction.value = 0;
+
+            return compressReceiptImage(receipt.file).then(file => {
+                return inboxStore.uploadItem({
+                    file: file,
+                    kind: InboxItemKind.Receipt,
+                    onUploadProgress: (progress: number) => {
+                        uploadFraction.value = progress;
+                    }
+                });
+            }).then(() => {});
+        },
+        removePhoto: receipt => {
+            const index = queue.findIndex(r => r.id === receipt.id);
+
+            if (index >= 0) {
+                queue.splice(index, 1);
+            }
+        },
+        onPhotoUploaded: count => {
+            uploadedCount.value = count;
+        }
+    }).then(count => {
+        uploadingReceipts.value = false;
+        uploadFraction.value = 0;
+
+        if (count === 1) {
+            snackbar.value?.showMessage('One receipt in the inbox');
+        } else {
+            snackbar.value?.showMessage('{count} receipts in the inbox', { count: count });
+        }
+
+        reload();
+    }).catch(error => {
+        uploadingReceipts.value = false;
+        uploadFraction.value = 0;
+
+        if (!error.processed) {
+            snackbar.value?.showError(error);
+        }
+
+        // the receipts uploaded before the failure are already in the inbox
+        reload();
     });
 }
 

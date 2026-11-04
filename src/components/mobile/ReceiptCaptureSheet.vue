@@ -47,15 +47,11 @@ import { useI18nUIComponents } from '@/lib/ui/mobile.ts';
 
 import { useInboxStore } from '@/stores/inbox.ts';
 
-import { ImageUploadQualityType } from '@/core/image.ts';
-import { KnownFileType } from '@/core/file.ts';
-
 import { InboxItemKind } from '@/models/inbox.ts';
 
 import { generateRandomUUID } from '@/lib/misc.ts';
-import { compressJpgImageByQuality } from '@/lib/ui/common.ts';
+import { compressReceiptImage } from '@/lib/receiptImage.ts';
 import { uploadReceiptQueue } from '@/lib/receiptUploadQueue.ts';
-import logger from '@/lib/logger.ts';
 
 interface ReceiptPhoto {
     readonly id: string;
@@ -147,15 +143,6 @@ function clearPhotos(): void {
     photos.value = [];
 }
 
-function compressReceipt(file: File): Promise<File> {
-    return compressJpgImageByQuality(file, ImageUploadQualityType.FHD1080P).then(blob => {
-        return KnownFileType.JPG.createFileFromBlob(blob, 'receipt');
-    }).catch(error => {
-        logger.warn('failed to compress receipt image, uploading the original file', error);
-        return file;
-    });
-}
-
 function upload(): void {
     if (uploading.value || !photos.value.length) {
         return;
@@ -188,7 +175,7 @@ function upload(): void {
 function uploadPhoto(photo: ReceiptPhoto): Promise<void> {
     uploadFraction.value = 0;
 
-    return compressReceipt(photo.file).then(file => {
+    return compressReceiptImage(photo.file).then(file => {
         return inboxStore.uploadItem({
             file: file,
             kind: InboxItemKind.Receipt,
