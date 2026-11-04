@@ -24,6 +24,8 @@ El servidor de datos es ezBookkeeping. Sus herramientas MCP aparecen con el nomb
 7. **Lo que no se lee, se pregunta.** Si un campo es ilegible (fecha, total, comercio o cuenta), pregúntalo. Nunca lo rellenes con un valor plausible.
 8. **Secretos.** Nunca muestres, copies ni guardes el token MCP. Las herramientas se llaman a través del servidor `ebk`, que ya tiene configurado el token.
 9. **Filas con error y resolución parcial.** Una fila `error` no se crea, pero las demás sí. Si **alguna** fila de un ítem de la bandeja termina en `error`, el ítem **sigue pendiente** (`inbox_item_status` = `pending`): se guardan los ids de lo ya creado y `processed_note` lista las filas fallidas. La respuesta trae `next_step`: arregla las filas fallidas (pregunta al usuario lo que falte), muestra la tabla y vuelve a llamar con el mismo ítem. Repetir es seguro: las filas ya creadas salen como `duplicate` y no se vuelven a crear. El ítem pasa a `processed` cuando ninguna fila falla (las `duplicate` no cuentan como error).
+10. **Catálogo de categorías vacío.** Si `query_all_transaction_categories` llega vacío, no sigas ni inventes categorías. Explica al usuario que ezBookkeeping necesita categorías de **dos niveles** (categoría → subcategoría) y que las de un solo nivel no aparecen en este catálogo. Ofrécele crearlas a mano en la app (por ejemplo, la categoría «Alimentación» con la subcategoría «Supermercado») y espera a que avise.
+11. **Mapa de tarjetas a cuentas (opcional).** Al empezar, si existe el archivo `~/.finanzas/cuentas.md` (en Windows, `%USERPROFILE%\.finanzas\cuentas.md`), léelo con las herramientas de archivos del propio CLI. Cada línea tiene la forma `****4412 → Bancolombia Ahorros`: los últimos cuatro dígitos de una tarjeta y el nombre de la cuenta. Si un recibo o una fila trae esos dígitos, usa esa cuenta, comprobando que el nombre exista en `query_all_accounts`; si no existe o el archivo no lo menciona, pregunta. Si el archivo no existe, sigue sin él. El archivo solo guarda los últimos cuatro dígitos: nunca pidas ni escribas un número de tarjeta completo. No lo modifiques: si el usuario quiere añadir una tarjeta, dile la línea que debe agregar.
 
 ## Herramientas MCP que usan los comandos
 
@@ -32,8 +34,8 @@ El servidor de datos es ezBookkeeping. Sus herramientas MCP aparecen con el nomb
 | `query_all_accounts` | Catálogo de cuentas. Siempre antes de escribir. |
 | `query_all_transaction_categories` | Catálogo de categorías. Siempre antes de escribir. |
 | `query_transactions` | Buscar transacciones: `start_time`, `end_time` (RFC 3339), `type`, `category_name`, `account_name`, `keyword`, `count` (50 o menos) y `page`. |
-| `list_inbox_items` | Ver la bandeja: `status` (pending), `kind` (1 = recibo, 2 = extracto) y `limit`. |
-| `get_inbox_item` | Abrir un ítem. Recibo: imagen y metadatos. Extracto CSV, TXT, OFX o QIF: texto. Extracto PDF o XLSX: archivo incrustado y `download_url` válido 15 minutos, **solo hasta 10 MB**; si pesa más, no se incrusta (`content_included` = false, con la explicación en `content_note`) y debes descargarlo desde `download_url` (de un solo uso, por ejemplo con `curl`) y leerlo en local. |
+| `list_inbox_items` | Ver la bandeja: `status` (pending), `kind` (`receipt` o `statement`) y `limit`. |
+| `get_inbox_item` | Abrir un ítem. El texto de la respuesta es **un solo bloque**: los metadatos en JSON (id, `kind`, nombre, tamaño, `download_url`…) y, en un extracto, una línea `---` y debajo el contenido. Recibo: metadatos más la imagen. Extracto CSV, TXT, OFX o QIF: después de `---` viene el contenido completo del archivo; léelo de ahí. Extracto PDF o XLSX: después de `---` viene una nota; el archivo va incrustado y `download_url` es válido 15 minutos, **solo hasta 10 MB**; si pesa más, no se incrusta (`content_included` = false, con la explicación en `content_note`) y debes descargarlo desde `download_url` (de un solo uso, por ejemplo con `curl`) y leerlo en local. |
 | `resolve_inbox_item` | Convertir un recibo en transacciones (1 a 50 filas) y marcarlo como procesado cuando ninguna fila falla (regla común 9). |
 | `discard_inbox_item` | Descartar un ítem con un `reason`. |
 | `add_transactions_batch` | Crear transacciones en lote (1 a 500 filas por llamada) con `source_label`. Opcional: `inbox_item_id`, que cierra el extracto de la bandeja cuando ninguna fila falla (regla común 9). |
@@ -44,10 +46,10 @@ Cada fila (`TxRow`) tiene `type` (expense, income o transfer), `time` (RFC 3339)
 
 ## /recibos
 
-Procesa los recibos pendientes de la bandeja. Cada recibo es una foto (`kind` 1).
+Procesa los recibos pendientes de la bandeja. Cada recibo es una foto (`kind` `receipt`).
 
-1. Llama a `query_all_accounts` y a `query_all_transaction_categories`.
-2. Llama a `list_inbox_items` con `status` pending y `kind` 1. Si el usuario indicó un id, usa `get_inbox_item` con ese id. Si no hay ningún recibo pendiente, dilo y termina.
+1. Llama a `query_all_accounts` y a `query_all_transaction_categories` (reglas comunes 10 y 11 si el catálogo viene vacío o hay un mapa de tarjetas).
+2. Llama a `list_inbox_items` con `status` pending y `kind` receipt. Si el usuario indicó un id, usa `get_inbox_item` con ese id. Si no hay ningún recibo pendiente, dilo y termina.
 3. Por cada recibo, llama a `get_inbox_item` y lee la imagen: fecha, comercio, total, y los impuestos o la propina si aparecen.
 4. Propón las filas: `type` expense, `time`, la cuenta (pregúntala si no es clara), la categoría del catálogo, `amount` tal como aparece en el total, y `comment` con el comercio.
 5. Si el recibo tiene partes con categorías distintas, propón varias filas. La foto queda vinculada a la primera transacción creada.
@@ -60,7 +62,7 @@ Procesa los recibos pendientes de la bandeja. Cada recibo es una foto (`kind` 1)
 
 Importa las filas de un extracto bancario. El modelo hace de analizador, así que no hace falta un parser por banco. Las cifras tienen que cuadrar.
 
-1. **Origen.** Si el argumento es una ruta local, lee el archivo con las herramientas del propio CLI. Si es `inbox` o un id, usa `list_inbox_items` con `kind` 2 y luego `get_inbox_item`.
+1. **Origen.** Si el argumento es una ruta local, lee el archivo con las herramientas del propio CLI. Si es `inbox` o un id, usa `list_inbox_items` con `kind` statement y luego `get_inbox_item`. En un CSV, TXT, OFX o QIF, el contenido del archivo está en el texto de la respuesta, después de la línea `---`.
 2. Llama a `query_all_accounts` y a `query_all_transaction_categories`.
 3. Extrae todas las filas: fecha, descripción, monto con su signo o su columna de débito o crédito, y el saldo inicial y final o el total que trae el extracto. No inventes filas. Si una fila no se lee, pregúntala.
 4. Pregunta lo que falte: la cuenta destino y el `source_label`, por ejemplo `bancolombia-2026-10`. Si el origen es la bandeja, el `source_label` es `inbox:<id>`.

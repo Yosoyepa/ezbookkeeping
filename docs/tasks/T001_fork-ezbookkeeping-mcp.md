@@ -124,3 +124,31 @@ Las fases 1 y 2 empiezan **solo si el spike C1 pasa** (o queda el plan B aprobad
 
 ## Cierre
 _(se rellena al terminar: por ítem, cumplido / no cumplido / aceptado por alcance, con la evidencia)_
+
+## Anexo C4: archivos de upstream modificados
+
+Criterio C4: menos de 15 archivos de upstream modificados. Medido con `git diff --name-status main HEAD` (estado `M`, es decir, archivos que ya existían en `main`, la base de upstream), el fork modifica **19** archivos (en la corrida E001 eran 18; el 19.º, `pkg/services/transactions.go`, entró con las correcciones de la revisión H1–H9). Todo lo demás del fork son archivos nuevos (estado `A`). No se redujo la cifra a la fuerza: cada archivo de la lista es un punto donde upstream registra algo (rutas, tablas, herramientas, textos) y no se puede añadir desde un archivo nuevo. Las cifras son líneas añadidas/quitadas.
+
+| # | Archivo | +/− | Motivo |
+|---|---|---|---|
+| 1 | `cmd/database.go` | +8/−0 | Migración: añade la tabla `InboxItem` a la lista de estructuras que upstream sincroniza al arrancar. |
+| 2 | `cmd/webserver.go` | +13/−0 | Rutas: `/api/v1/inbox/items/*` (subida, lista, detalle, estadísticas, descartar, reabrir, borrar, archivo) y la descarga de un solo uso `/inbox/download/:token`. Upstream registra todas las rutas en este archivo. |
+| 3 | `pkg/api/model_context_protocols.go` | +14/−0 | Entrega `TransactionPictureService` e `InboxItemService` a las herramientas MCP (los dos métodos nuevos de `MCPAvailableServices`). |
+| 4 | `pkg/core/mcp_tool.go` | +9/−1 | Ocho tipos de herramienta nuevos (`get_receipt_image` y las siete de la bandeja y los lotes). Cada herramienta tiene su bit para el permiso por token, y sube el valor máximo. |
+| 5 | `pkg/mcp/handler.go` | +3/−1 | Los dos métodos nuevos de la interfaz `MCPAvailableServices` y `MCPMixedContent` como tipo admitido del handler genérico. |
+| 6 | `pkg/mcp/mcp_container.go` | +21/−3 | Registra las ocho herramientas nuevas y añade el mapa de handlers de contenido mixto (texto + imagen/recurso en una respuesta). |
+| 7 | `pkg/mcp/model_context_protocol.go` | +1/−1 | `MCPMixedContent` como tipo admitido de `MCPCallToolResponse`. |
+| 8 | `pkg/mcp/query_transactions_tool_handler.go` | +3/−1 | `query_transactions` devuelve el `id` de cada transacción, que `update_transaction` necesita. |
+| 9 | `pkg/services/transactions.go` | +81/−18 | `VerifyNewTransaction`: el `dry_run` de las herramientas de IA aplica las mismas reglas que `CreateTransaction`. Para no duplicar reglas se extrajeron `verifyNewTransaction` y `verifyNotBeforeBalanceModification` de `doCreateTransaction` (corrección de la revisión). |
+| 10 | `pkg/uuid/uuid_type.go` | +1/−0 | Tipo de UUID para los ids de la bandeja (`UUID_TYPE_INBOX_ITEM`). |
+| 11 | `src/components/desktop/MainPageLayout.vue` | +13/−0 | Botón «Bandeja» en la barra superior de escritorio. |
+| 12 | `src/consts/api.ts` | +19/−0 | Tiempo de espera de la subida (120 s, los extractos pueden pesar 20 MB) y los mensajes de «bandeja deshabilitada» de las rutas nuevas. |
+| 13 | `src/consts/mcp.ts` | +41/−1 | Lista de herramientas MCP del diálogo de tokens: añade las ocho nuevas para poder activarlas o no por token. |
+| 14 | `src/lib/services.ts` | +37/−0 | Métodos del cliente HTTP de la bandeja (subir, listar, detalle, estadísticas, descartar, reabrir, borrar). |
+| 15 | `src/locales/en.json` | +37/−0 | Textos nuevos de la bandeja y la captura de recibos (inglés, idioma base). |
+| 16 | `src/locales/es.json` | +37/−0 | Los mismos textos en español. |
+| 17 | `src/router/desktop.ts` | +7/−0 | Ruta `/inbox` de escritorio. |
+| 18 | `src/router/mobile.ts` | +7/−0 | Ruta `/inbox` de la PWA móvil. |
+| 19 | `src/views/mobile/HomePage.vue` | +40/−0 | Botones «Recibo» (abre la cámara) y «Bandeja» (con el contador de pendientes) en la pantalla de inicio móvil. |
+
+Resumen de la cifra: 19 archivos, 392 líneas añadidas y 26 quitadas en total; 81 + 18 de ellas están en un solo archivo (`transactions.go`) y casi todo lo demás son entradas de registro de una a cuarenta líneas. Para el rebase, los conflictos probables están en `cmd/webserver.go`, `pkg/mcp/mcp_container.go`, `pkg/core/mcp_tool.go`, `src/consts/mcp.ts` y `pkg/services/transactions.go`; los demás son inserciones aisladas. Pendiente: el rebase de prueba sobre upstream, que no se ha hecho.

@@ -28,7 +28,8 @@ services:
       EBK_SERVER_DOMAIN: "${EBK_SERVER_DOMAIN:-localhost}"
       EBK_MCP_ENABLE_MCP: "true"
       # IPs permitidas para MCP. Con Docker, el servidor puede ver la IP del gateway de Docker en lugar de la tuya; ver README.
-      EBK_MCP_MCP_ALLOWED_REMOTE_IPS: "${EBK_MCP_ALLOWED_REMOTE_IPS:-127.0.0.1,172.*.*.*,192.168.65.*}"
+      # Misma variable que lee upstream (sección [mcp], clave mcp_allowed_remote_ips): ai-clients/.env la pasa sin renombrarla.
+      EBK_MCP_MCP_ALLOWED_REMOTE_IPS: "${EBK_MCP_MCP_ALLOWED_REMOTE_IPS:-127.0.0.1,172.*.*.*,192.168.65.*}"
     volumes:
       - ezbookkeeping-data:/ezbookkeeping/data
       - ezbookkeeping-storage:/ezbookkeeping/storage
