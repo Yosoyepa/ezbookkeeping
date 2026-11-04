@@ -1,0 +1,14 @@
+Nequi - extracto de movimientos (SINTETICO - prueba E2E)
+Cuenta: Nequi
+Periodo: 01/10/2026 - 31/10/2026
+Saldo inicial;350.000,00
+Fecha;Descripcion;Valor;Saldo
+02/10/2026;Recarga celular;-20.000,00;330.000,00
+05/10/2026;Pago en tienda Mini Mercado;-14.500,00;315.500,00
+09/10/2026;Envio a Juan;-50.000,00;265.500,00
+13/10/2026;Recepcion de Maria Lopez;+80.000,00;345.500,00
+16/10/2026;Suscripcion musica;-16.900,00;328.600,00
+19/10/2026;Pago restaurante Sabor del Barrio;-42.000,00;286.600,00
+24/10/2026;Retiro en cajero;-100.000,00;186.600,00
+29/10/2026;Pago Uber;-12.300,00;174.300,00
+Saldo final;174.300,00

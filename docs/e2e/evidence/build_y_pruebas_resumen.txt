@@ -1,0 +1,12 @@
+== Build de la imagen (docker compose -f ai-clients/docker-compose.yml up -d --build, desde el clon)
+Rama/commit construido: Yosoyepa/w-e2e @ e6a1f06a
+Estado final: contenedor ai-clients-ezbookkeeping-1 'Started' (exit 0)
+Pruebas Go de upstream dentro del build: paquetes con 'ok' = 43 ; líneas FAIL = 0
+Build de frontend (vite): '✓ 3998 modules transformed' y lint de frontend ejecutado durante el build
+
+== npm test (vitest) en node:26.13.0-alpine3.24 sobre el clon
+Test Files  15 passed (15)
+Tests  38689 passed (38689)
+Duration  7.45s (transform 62%, import 30%, tests 8%, worker 1%)
+
+== Pruebas de montos COP (pkg/aiimport/amount_test.go): tabla con ~39 casos, incluida en 'ok' de pkg/aiimport

@@ -1,0 +1,11 @@
+
+BUG-03 (medio): list_inbox_items espera kind como texto ('receipt'/'statement') y la documentación dice 1 y 2.
+
+Esquema real (tools/list): "kind": {"type":"string","enum":["receipt","statement"]}
+Documentación: ai-clients/shared/finanzas-workflows.md y los comandos: "kind 1 = recibo, 2 = extracto".
+Llamadas que fallaron:
+  list_inbox_items {"status":"pending","kind":"1"}   -> error -32603 "Internal error", data "inbox item kind is invalid"
+  list_inbox_items {"status":"pending","kind":"2"}   -> error -32603 "Internal error", data "inbox item kind is invalid"
+Origen del mensaje: pkg/errs/inbox_item.go:17 (ErrInboxItemKindInvalid, HTTP 400). Dentro de MCP se devuelve como
+error interno (-32603) y no como parámetros inválidos (-32602). No localicé la línea exacta del mapeo.
+Los modelos se recuperaron leyendo el esquema (run2, run6, run7).

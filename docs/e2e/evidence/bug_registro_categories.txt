@@ -1,0 +1,7 @@
+
+BUG-06 (bajo): POST /api/register.json exige el campo 'categories' aunque la doc lo trate como opcional.
+
+  {"username":"e2eotro","email":"otro@example.com","nickname":"E2EOtro","password":"<...>","language":"es","defaultCurrency":"COP"}
+     -> HTTP 400 {"errorMessage":"parameter \"categories\" is required"}
+  Igual con "categories": []  -> HTTP 200 {"success":true}
+Sospecha: pkg/models/transaction_category.go:62 (Categories con binding:"required") embebido en el request de registro.
