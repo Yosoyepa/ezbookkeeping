@@ -1,0 +1,15 @@
+initialize ........ OK (HTTP 200, protocolo 2025-06-18)
+tools/list ........ OK (15 herramientas)
+  OK      list_inbox_items
+  OK      get_inbox_item
+  OK      resolve_inbox_item
+  OK      discard_inbox_item
+  OK      add_transactions_batch
+  OK      update_transaction
+  OK      get_spending_summary
+  OK      query_transactions
+  OK      query_all_accounts
+  OK      query_all_transaction_categories
+Resultado: las 10 herramientas de Finanzas están disponibles.
+
+exit=0

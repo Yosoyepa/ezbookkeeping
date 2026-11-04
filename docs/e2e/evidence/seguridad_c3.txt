@@ -1,0 +1,18 @@
+== 1. POST /mcp sin cabecera Authorization
+HTTP 400  body={"errorCode":202012,"errorMessage":"token is empty","path":"/mcp","success":false}
+== 2. POST /mcp con token inv�lido (Bearer <TOKEN>)
+HTTP 401  body={"errorCode":202004,"errorMessage":"current token type is invalid","path":"/mcp","success":false}
+== 3. POST /mcp con Authorization sin 'Bearer'
+HTTP 400  body={"errorCode":202012,"errorMessage":"token is empty","path":"/mcp","success":false}
+== 4. GET /mcp sin token
+HTTP 400  body={"errorCode":202012,"errorMessage":"token is empty","path":"/mcp","success":false}
+== 5. Token de e2etester (usuario 1): list_inbox_items pending receipts
+HTTP 200  items=7
+== 6. Token de e2eotro (usuario 2): list_inbox_items all
+HTTP 200  items=0 total=0
+== 7. Token de e2eotro: get_inbox_item del �tem de e2etester (id 3852055766076751872)
+HTTP 400  error={"code": -32603, "message": "Internal error", "data": "inbox item not found"} isError=None
+== 8. Token de e2eotro: query_all_accounts (debe estar vac�o)
+HTTP 200  body={}
+== 9. Token de e2etester: query_all_accounts (control)
+HTTP 200  body={"cashAccounts":["Efectivo"],"savingsAccounts":["Bancolombia Ahorros"],"virtualAccounts":["Nequi"]}

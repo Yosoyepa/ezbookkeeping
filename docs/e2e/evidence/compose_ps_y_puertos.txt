@@ -1,0 +1,11 @@
+== docker compose ps
+NAME                         IMAGE                    COMMAND                  SERVICE         CREATED          STATUS          PORTS
+ai-clients-ezbookkeeping-1   ezbookkeeping-ai:local   "/docker-entrypoint.…"   ezbookkeeping   31 minutes ago   Up 30 minutes   127.0.0.1:8080->8080/tcp
+
+== docker port
+8080/tcp -> 127.0.0.1:8080
+
+== .env (solo claves no secretas)
+EBK_BIND_IP=127.0.0.1
+EBK_SERVER_DOMAIN=localhost
+TZ=America/Bogota

@@ -1,0 +1,7 @@
+
+BUG-07 (bajo, seguridad): /mcp sin token responde 400 y no 401/403.
+
+  POST /mcp sin Authorization -> HTTP 400 {"errorCode":202012,"errorMessage":"token is empty"}
+  POST /mcp con Bearer <TOKEN>álido -> HTTP 401 {"errorCode":202004,"errorMessage":"current token type is invalid"}
+El README (§8, 'Problemas frecuentes') y el criterio C3 esperan 401 o 403 cuando falta el token.
+Sospecha: pkg/errs/token.go:21 define ErrTokenIsEmpty con http.StatusBadRequest.

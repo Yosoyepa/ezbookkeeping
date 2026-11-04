@@ -1,0 +1,24 @@
+== Transacciones en octubre 2026 (todas las cuentas): 26
+  Bancolombia Ahorros  n=14  neto_firmado=3029550      con_etiqueta_ia=14  con_origen=14  con_foto=2
+  Efectivo             n=3   neto_firmado=-166050      con_etiqueta_ia=2   con_origen=2   con_foto=2
+  Nequi                n=9   neto_firmado=-1410267     con_etiqueta_ia=9   con_origen=9   con_foto=1
+== Transacciones creadas por IA (etiqueta ia): 25 ; sin etiqueta ia (manuales): 1
+== Cuadre extractos (firmado = ingresos - gastos)
+  Bancolombia PDF: filas=12 neto=3162650 ; saldo final-inicial esperado=3162650 ; diferencia=0
+  Nequi CSV: filas=8 neto=-175700 ; saldo final-inicial esperado=-175700 ; diferencia=0
+== Bandeja (estado en servidor)
+  pendingReceipts=2 pendingStatements=0
+  procesados: 6
+    id=3852055766076751872 kind=1 name=e2e_05_codex_ferreteria.jpg resultTx=1
+    id=3852055008015024128 kind=1 name=e2e_04_agy_panaderia.jpg resultTx=1
+    id=3852054252100780032 kind=2 name=nequi_2026-10.csv resultTx=8
+    id=3852053472564215808 kind=1 name=e2e_03_restaurante.jpg resultTx=1
+    id=3852053470416732161 kind=1 name=e2e_02_drogueria.jpg resultTx=1
+    id=3852053470416732160 kind=1 name=e2e_01_supermercado.jpg resultTx=1
+  descartados: 0
+== Foto vinculada por recibo procesado (MCP get_receipt_image, structuredContent)
+  item=3852055766076751872 picture=3852055764466139136 transaction_id=3852056153429114880
+  item=3852055008015024128 picture=3852055006404411392 transaction_id=3852055657360392192
+  item=3852053472564215808 picture=3852053470953603072 transaction_id=3852053864211546113
+  item=3852053470416732161 picture=3852053468806119425 transaction_id=3852053864211546112
+  item=3852053470416732160 picture=3852053468806119424 transaction_id=3852053862064062464
