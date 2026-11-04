@@ -48,7 +48,7 @@ Copy-Item ai-clients\.env.example ai-clients\.env
 docker compose -f ai-clients/docker-compose.yml up -d --build
 ```
 
-El build ejecuta las pruebas de upstream y tarda unos 6 minutos la primera vez. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
+El build ejecuta las pruebas de upstream y tarda unos 6 minutos la primera vez. Docker necesita al menos 8 GB de memoria: el compose le da al Node del build un heap de 6 GB (`BUILD_NODE_OPTIONS`, que puedes cambiar con `EBK_BUILD_NODE_OPTIONS` en `.env`), porque el lint del frontend (`vue-tsc`) se queda sin memoria con el heap por defecto. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
 
 Abre `http://127.0.0.1:8080` y comprueba que la aplicación carga.
 
@@ -63,7 +63,7 @@ Tus datos viven en los volúmenes `ezbookkeeping-data`, `ezbookkeeping-storage` 
 Para saber si el registro web está habilitado:
 
 - En la pantalla de inicio de sesión, el enlace «Crear una cuenta» está activo (si está deshabilitado, el registro está apagado). La ruta directa es `http://127.0.0.1:8080/desktop#/signup`.
-- O desde la terminal: `curl -s http://127.0.0.1:8080/server_settings.js`. Si la salida contiene `_['r']=1`, el registro está habilitado; si contiene `_['r']=0`, no.
+- O desde la terminal: `curl.exe -s http://127.0.0.1:8080/server_settings.js` (en Windows PowerShell 5.1 escribe `curl.exe`: `curl` a secas es un alias de `Invoke-WebRequest`). Si la salida contiene `_['r']=1`, el registro está habilitado; si contiene `_['r']=0`, no.
 - El registro viene habilitado de fábrica (`[user] enable_register = true`). Para apagarlo, pon `EBK_USER_ENABLE_REGISTER: "false"` en el `environment` del compose.
 
 ### Crear el usuario con `user-add` (alternativa)
@@ -182,7 +182,7 @@ $env:EBK_MCP_TOKEN = '<token>'
 claude -p "/recibos" --mcp-config .mcp.json --strict-mcp-config --add-dir "$env:USERPROFILE\.finanzas" --allowedTools "mcp__ebk"
 ```
 
-`.mcp.json` es el de la sección 5. `--add-dir "$env:USERPROFILE\.finanzas"` es lo que permite leer el mapa de tarjetas (sección 6): en `-p` nadie puede aprobar la lectura de un archivo fuera de la carpeta de trabajo, y sin ese flag el comando dice «no pude leer `cuentas.md` porque el permiso no fue concedido», aunque el archivo exista. (Comprobado con Claude Code 2.1.306: sirve `--add-dir` solo, o `Read` en `--allowedTools`; sin ninguno de los dos falla. `--add-dir` limita el acceso a esa carpeta y no cambia tu configuración global.) Con `--allowedTools "mcp__ebk"` también quedan autorizadas las herramientas que escriben: pon en el prompt la confirmación explícita (por ejemplo, «aplica con `dry_run=false` después del `dry_run`»), o usa el flujo de dos pasos de abajo.
+`.mcp.json` es el de la sección 5. `--add-dir "$env:USERPROFILE\.finanzas"` es lo que permite leer el mapa de tarjetas (sección 6; si aún no lo creaste, crea antes la carpeta, aunque esté vacía, con el comando de esa sección): en `-p` nadie puede aprobar la lectura de un archivo fuera de la carpeta de trabajo, y sin ese flag el comando dice «no pude leer `cuentas.md` porque el permiso no fue concedido», aunque el archivo exista. (Comprobado con Claude Code 2.1.306: sirve `--add-dir` solo, o `Read` en `--allowedTools`; sin ninguno de los dos falla. `--add-dir` limita el acceso a esa carpeta y no cambia tu configuración global.) Con `--allowedTools "mcp__ebk"` también quedan autorizadas las herramientas que escriben: pon en el prompt la confirmación explícita (por ejemplo, «aplica con `dry_run=false` después del `dry_run`»), o usa el flujo de dos pasos de abajo.
 
 **Revisar el `dry_run` antes de aplicar (dos ejecuciones).** `--allowedTools` autoriza herramientas completas, no parámetros: no se puede permitir `resolve_inbox_item` o `add_transactions_batch` «solo con `dry_run=true`». Lo que sí funciona es separar los permisos:
 
@@ -237,7 +237,14 @@ Ejemplos:
 
 ### Mapa de tarjetas a cuentas
 
-Un recibo que dice «tarjeta débito ****4412» no dice a qué cuenta pertenece, y sin ayuda el comando te lo pregunta cada vez. Para que no pregunte, crea el archivo opcional `~/.finanzas/cuentas.md` (en Windows, `%USERPROFILE%\.finanzas\cuentas.md`) con una línea por tarjeta:
+Un recibo que dice «tarjeta débito ****4412» no dice a qué cuenta pertenece, y sin ayuda el comando te lo pregunta cada vez. Para que no pregunte, crea el archivo opcional `~/.finanzas/cuentas.md` (en Windows, `%USERPROFILE%\.finanzas\cuentas.md`) con una línea por tarjeta. La carpeta no existe al principio; en PowerShell créala y escribe el archivo en UTF-8 sin BOM así:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.finanzas" | Out-Null
+[IO.File]::WriteAllText("$env:USERPROFILE\.finanzas\cuentas.md", "****4412 → Bancolombia Ahorros`r`n", (New-Object Text.UTF8Encoding $false))
+```
+
+El contenido, una línea por tarjeta:
 
 ```
 ****4412 → Bancolombia Ahorros
@@ -246,7 +253,7 @@ Un recibo que dice «tarjeta débito ****4412» no dice a qué cuenta pertenece,
 
 Las cuatro skills y comandos lo leen al empezar, si existe. En modo headless, Claude Code necesita `--add-dir` para leerlo (sección 5, «Uso sin interacción»). Si no puede leerlo por permisos, el comando lo dice y no lo confunde con un archivo inexistente. Reglas:
 
-- El archivo va en **UTF-8** (la flecha `→` es un carácter Unicode). En PowerShell 5.1, `Set-Content` y `>` no escriben UTF-8 por defecto: usa un editor que guarde en UTF-8 o `Set-Content -Encoding utf8`.
+- El archivo va en **UTF-8** (la flecha `→` es un carácter Unicode). En PowerShell 5.1, `Set-Content` y `>` no escriben UTF-8 por defecto: usa el comando de arriba o un editor que guarde en UTF-8. (`Set-Content -Encoding utf8` también escribe UTF-8, pero con BOM.)
 - Solo se guardan los **últimos cuatro dígitos**; nunca el número completo.
 - El nombre de la cuenta debe ser el que aparece en `query_all_accounts`. Si no existe en el catálogo, el comando te lo pregunta.
 - Si la tarjeta no está en el archivo, el comando te pregunta la cuenta y te dice la línea que puedes añadir; no escribe el archivo por ti.
@@ -293,7 +300,7 @@ Comportamientos de ezBookkeeping (upstream) que este fork **no cambia**, para qu
 
 ## 11. Subir a la bandeja desde el PC
 
-Los recibos y extractos llegan a la bandeja desde el celular (sección 4) o desde el PC, de dos formas.
+Los recibos y extractos llegan a la bandeja desde el celular (sección 4) o desde el PC, de dos formas. **La recomendada es el botón de la web**: no necesita tokens ni cambios de configuración. El script es para automatizar y exige activar los tokens api.
 
 ### El botón de la web de escritorio
 
