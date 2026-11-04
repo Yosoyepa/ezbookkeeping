@@ -35,7 +35,12 @@ Este paquete conecta tu servidor de ezBookkeeping con **Claude Code**, **Antigra
 
 ## 1. Levantar el servidor
 
-Construye desde el **clon principal** del repositorio. No construyas desde un worktree de Git ni desde una copia exportada.
+Construye desde el **clon principal** del repositorio: una copia normal (con su propia carpeta `.git`) con la rama que quieres desplegar. No construyas desde un worktree de Git ni desde una copia exportada: el build lee la revisión de Git y falla sin una carpeta `.git` propia. Si trabajas desde un worktree, crea un clon limpio de esa rama y construye ahí:
+
+```powershell
+git clone --branch <rama> <ruta-del-worktree> <destino>
+cd <destino>
+```
 
 ```powershell
 Copy-Item ai-clients\.env.example ai-clients\.env
@@ -43,7 +48,7 @@ Copy-Item ai-clients\.env.example ai-clients\.env
 docker compose -f ai-clients/docker-compose.yml up -d --build
 ```
 
-El build ejecuta las pruebas de upstream. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
+El build ejecuta las pruebas de upstream y tarda unos 6 minutos la primera vez. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
 
 Abre `http://127.0.0.1:8080` y comprueba que la aplicación carga.
 
@@ -53,11 +58,11 @@ Tus datos viven en los volúmenes `ezbookkeeping-data`, `ezbookkeeping-storage` 
 
 ### Crear el usuario: mejor por la web
 
-**Recomendado: regístrate por la web** (`http://127.0.0.1:8080`). Los comandos necesitan categorías de **dos niveles** (categoría → subcategoría), y al registrarte por la web upstream te ofrece las categorías por defecto («Usar categorías preestablecidas»), que ya tienen ese formato. Un usuario creado con `user-add` queda **sin categorías**, y `user-add` no puede sembrarlas: solo recibe usuario, correo, apodo, contraseña y moneda. Por eso `user-add` es solo la alternativa.
+**Recomendado: regístrate por la web.** Abre directamente `http://127.0.0.1:8080/desktop#/signup` (si el enlace «Crear una cuenta» de la pantalla de inicio no responde, esta ruta funciona igual). Los comandos necesitan categorías de **dos niveles** (categoría → subcategoría), y al registrarte por la web upstream te ofrece las categorías por defecto: en el paso 2 del registro **activa el interruptor «Utilizar categorías de transacciones predeterminadas»** (en inglés, «Use default transaction categories»). Viene **desactivado**; si lo dejas así, el usuario queda sin categorías. Las categorías por defecto ya tienen el formato de dos niveles. Un usuario creado con `user-add` queda **sin categorías**, y `user-add` no puede sembrarlas: solo recibe usuario, correo, apodo, contraseña y moneda. Por eso `user-add` es solo la alternativa.
 
 Para saber si el registro web está habilitado:
 
-- En la pantalla de inicio de sesión, el enlace «Crear una cuenta» está activo (si está deshabilitado, el registro está apagado).
+- En la pantalla de inicio de sesión, el enlace «Crear una cuenta» está activo (si está deshabilitado, el registro está apagado). La ruta directa es `http://127.0.0.1:8080/desktop#/signup`.
 - O desde la terminal: `curl -s http://127.0.0.1:8080/server_settings.js`. Si la salida contiene `_['r']=1`, el registro está habilitado; si contiene `_['r']=0`, no.
 - El registro viene habilitado de fábrica (`[user] enable_register = true`). Para apagarlo, pon `EBK_USER_ENABLE_REGISTER: "false"` en el `environment` del compose.
 
@@ -72,9 +77,22 @@ docker compose -f ai-clients/docker-compose.yml exec -e EBK_NEW_PASSWORD ezbookk
 Remove-Item Env:EBK_NEW_PASSWORD
 ```
 
-> **Aviso.** La salida de `user-add` imprime el registro completo del usuario, con el hash de la contraseña y su sal (`[Password]` y `[Salt]`). No compartas esa salida (ni la pegues en un chat, un issue o una conversación con un modelo).
+**Sin interacción** (un script, una herramienta sin consola). `Read-Host` no funciona si no hay consola. Si la contraseña ya está en una variable del proceso (por ejemplo, la dejó tu gestor de secretos en `EBK_NEW_PASSWORD`), salta la lectura y ejecuta solo el segundo comando de arriba; `-e EBK_NEW_PASSWORD` la pasa al contenedor sin escribirla en la línea de comandos. No la generes ni la imprimas en el mismo comando: así queda en el historial y en la salida.
+
+> **Aviso.** La salida de `user-add` imprime el registro completo del usuario, con el hash de la contraseña y su sal (`[Password]` y `[Salt]`), y además la configuración completa del servidor (decenas de líneas). No compartas esa salida (ni la pegues en un chat, un issue o una conversación con un modelo).
 
 Como el usuario queda sin categorías, créalas a mano en la app antes de usar los comandos, en dos niveles (por ejemplo, categoría «Alimentación» con subcategoría «Supermercado»). Si solo creas categorías de primer nivel, el MCP las ignora y `query_all_transaction_categories` llega vacío (ver «Notas de upstream»).
+
+### Crear las cuentas
+
+Los comandos no crean cuentas: créalas en la web antes del primer uso.
+
+1. Inicia sesión en `http://127.0.0.1:8080` y abre **Cuentas** → **Añadir**.
+2. Escribe el **nombre** (por ejemplo «Efectivo» o «Bancolombia Ahorros»).
+3. Elige la **categoría de cuenta**: es obligatoria. Usa «Efectivo» para el efectivo y «Cuentas de ahorros» para una cuenta bancaria.
+4. Elige la **divisa** «Peso Colombiano» (COP) y guarda.
+
+Las categorías de transacción (la jerarquía categoría → subcategoría) se editan en **Ajustes** (el icono de tu usuario, arriba a la derecha) → menú lateral **Datos básicos** → **Categorías de transacciones**. Las categorías de cuenta del paso 3 (Efectivo, Cuentas de ahorros…) son otra lista, fija, que trae upstream.
 
 ### El token MCP
 
@@ -129,7 +147,7 @@ El compose publica el puerto 8080 en **dos** direcciones: `127.0.0.1` (tus CLI e
 1. Copia `ai-clients/claude-code/.mcp.json.example` a `.mcp.json` en la carpeta desde la que usarás Claude Code.
 2. Copia la carpeta `ai-clients/claude-code/.claude/` a esa misma carpeta. Trae la skill `finanzas` y los cuatro comandos.
 3. Define `EBK_MCP_TOKEN` con tu token, como en la sección 2. Si tu servidor no está en `http://127.0.0.1:8080/mcp`, define también `EBK_MCP_URL`. Abre una terminal nueva.
-4. Ejecuta `claude` en esa carpeta y aprueba el servidor `ebk` cuando lo pida. Comprueba con `claude mcp list`.
+4. Ejecuta `claude` en esa carpeta y aprueba el servidor `ebk` cuando lo pida. Comprueba con `claude mcp list`. Hasta que lo apruebes en una sesión interactiva, `claude mcp list` muestra `ebk` como «Pending approval»; la receta `-p` (sección 5, «Uso sin interacción») no lo necesita.
 5. Prueba `/recibos`.
 
 ### Antigravity (`agy`)
@@ -161,12 +179,27 @@ El servidor está en `http://127.0.0.1:8080/mcp`. Claude Code y Codex leen el to
 
 ```powershell
 $env:EBK_MCP_TOKEN = '<token>'
-claude -p "/recibos" --mcp-config .mcp.json --strict-mcp-config --allowedTools "mcp__ebk"
+claude -p "/recibos" --mcp-config .mcp.json --strict-mcp-config --add-dir "$env:USERPROFILE\.finanzas" --allowedTools "mcp__ebk"
 ```
 
-`.mcp.json` es el de la sección 5. Con `--allowedTools "mcp__ebk"` también quedan autorizadas las herramientas que escriben: pon en el prompt la confirmación explícita (por ejemplo, «aplica con `dry_run=false` después del `dry_run`»), o limita la lista a las de lectura, por ejemplo `"mcp__ebk__list_inbox_items mcp__ebk__get_inbox_item"`.
+`.mcp.json` es el de la sección 5. `--add-dir "$env:USERPROFILE\.finanzas"` es lo que permite leer el mapa de tarjetas (sección 6): en `-p` nadie puede aprobar la lectura de un archivo fuera de la carpeta de trabajo, y sin ese flag el comando dice «no pude leer `cuentas.md` porque el permiso no fue concedido», aunque el archivo exista. (Comprobado con Claude Code 2.1.306: sirve `--add-dir` solo, o `Read` en `--allowedTools`; sin ninguno de los dos falla. `--add-dir` limita el acceso a esa carpeta y no cambia tu configuración global.) Con `--allowedTools "mcp__ebk"` también quedan autorizadas las herramientas que escriben: pon en el prompt la confirmación explícita (por ejemplo, «aplica con `dry_run=false` después del `dry_run`»), o usa el flujo de dos pasos de abajo.
 
-**Antigravity** (`agy -p`). Pone el servidor en `.agents/mcp_config.json` del workspace (el formato de `antigravity/mcp_config.json.example`, con el token en texto plano) y ejecuta desde esa carpeta. En modo `-p` hace falta `--dangerously-skip-permissions`, que autoriza todas las herramientas:
+**Revisar el `dry_run` antes de aplicar (dos ejecuciones).** `--allowedTools` autoriza herramientas completas, no parámetros: no se puede permitir `resolve_inbox_item` o `add_transactions_batch` «solo con `dry_run=true`». Lo que sí funciona es separar los permisos:
+
+```powershell
+# Paso 1: solo herramientas de lectura. El modelo no puede escribir y devuelve la tabla propuesta.
+claude -p "/recibos Procesa los recibos pendientes con una fila por recibo. No tienes permiso para escribir: devuelve solo la tabla propuesta (id, fecha, comercio, categoría, cuenta, monto)." `
+  --mcp-config .mcp.json --strict-mcp-config --add-dir "$env:USERPROFILE\.finanzas" `
+  --allowedTools mcp__ebk__query_all_accounts mcp__ebk__query_all_transaction_categories mcp__ebk__list_inbox_items mcp__ebk__get_inbox_item
+
+# Revisa la tabla. Después, paso 2: autoriza todo el servidor y pega la tabla aprobada en el prompt.
+claude -p "/recibos Aplica esta tabla que ya revisé, sin cambiar cuenta, categoría ni monto: <tabla>" `
+  --mcp-config .mcp.json --strict-mcp-config --add-dir "$env:USERPROFILE\.finanzas" --allowedTools "mcp__ebk"
+```
+
+Comprobado con dos recibos: el paso 1 devolvió la tabla (cuenta de la tarjeta incluida) y dejó la bandeja intacta (2 pendientes, 0 transacciones); el paso 2 hizo el `dry_run`, luego aplicó y dejó las 2 transacciones.
+
+**Antigravity** (`agy -p`). Pone el servidor en `.agents/mcp_config.json` del workspace (el formato de `antigravity/mcp_config.json.example`, con el token en texto plano) y ejecuta desde esa carpeta. En modo `-p` hace falta `--dangerously-skip-permissions`, que autoriza todas las herramientas y también la lectura del mapa de tarjetas (comprobado con `agy` 1.4.12: lee `%USERPROFILE%\.finanzas\cuentas.md` sin flags adicionales). Con ese flag no hay permisos que separar entre el paso 1 y el paso 2 del flujo de arriba (no probé si `agy` acepta una lista de herramientas permitidas): pídele en el prompt del paso 1 que no escriba y revisa su tabla antes del paso 2.
 
 ```powershell
 agy -p "/recibos" --dangerously-skip-permissions --print-timeout 240s
@@ -181,6 +214,8 @@ agy -p "/recibos" --dangerously-skip-permissions --print-timeout 240s
   -c 'mcp_servers.ebk.default_tools_approval_mode="approve"' `
   'Usa $recibos para procesar los recibos pendientes'
 ```
+
+Con esta receta (`-s read-only`) Codex 0.166.0 leyó `%USERPROFILE%\.finanzas\cuentas.md` sin flags adicionales; en esa prueba su primer intento de lectura falló al crear el proceso del sandbox en Windows (`CreateProcessWithLogonW failed: 267`) y el reintento lo leyó. No lo probé con 0.163.0. Si en tu equipo no lo lee, el comando debe decir que es un problema de permisos (regla 11 de `shared/finanzas-workflows.md`). Como `default_tools_approval_mode="approve"` autoriza todas las herramientas del servidor, el paso 1 del flujo de dos pasos se limita con el prompt, no con permisos.
 
 En Windows, el wrapper `codex.ps1` pasa mal los argumentos con comillas dobles dentro del prompt (en la prueba E001, con Codex 0.163.0, fallaba con `unexpected argument`): escribe el prompt sin comillas dobles. Las comillas dobles de los valores de `-c` (cadenas TOML) sí funcionan entre comillas simples.
 
@@ -209,8 +244,9 @@ Un recibo que dice «tarjeta débito ****4412» no dice a qué cuenta pertenece,
 ****9087 → Nequi
 ```
 
-Las cuatro skills y comandos lo leen al empezar, si existe. Reglas:
+Las cuatro skills y comandos lo leen al empezar, si existe. En modo headless, Claude Code necesita `--add-dir` para leerlo (sección 5, «Uso sin interacción»). Si no puede leerlo por permisos, el comando lo dice y no lo confunde con un archivo inexistente. Reglas:
 
+- El archivo va en **UTF-8** (la flecha `→` es un carácter Unicode). En PowerShell 5.1, `Set-Content` y `>` no escriben UTF-8 por defecto: usa un editor que guarde en UTF-8 o `Set-Content -Encoding utf8`.
 - Solo se guardan los **últimos cuatro dígitos**; nunca el número completo.
 - El nombre de la cuenta debe ser el que aparece en `query_all_accounts`. Si no existe en el catálogo, el comando te lo pregunta.
 - Si la tarjeta no está en el archivo, el comando te pregunta la cuenta y te dice la línea que puedes añadir; no escribe el archivo por ti.
@@ -252,12 +288,41 @@ Comportamientos de ezBookkeeping (upstream) que este fork **no cambia**, para qu
 - **Categorías de dos niveles.** El MCP solo lista subcategorías. Si el usuario solo tiene categorías de primer nivel, `query_all_transaction_categories` llega vacío, sin aviso, y los comandos se detienen y te piden crearlas. Crea la jerarquía categoría → subcategoría en la app, o regístrate por la web con las categorías por defecto (sección 2).
 - **Rutas profundas de la PWA.** La app móvil es de una sola página: el servidor solo sirve `/mobile` y la navegación interna va después de ese punto en la misma página (tras `#!`, por ejemplo `http://127.0.0.1:8080/mobile#!/inbox`). Los enlaces dentro de la app funcionan. Si abres o recargas una ruta profunda como `http://127.0.0.1:8080/mobile/inbox` directamente, el servidor responde `404` en JSON, igual que con cualquier otra página de upstream. Los enlaces internos de la PWA son correctos (comprobado: el botón «Bandeja» navega a `/mobile#!/inbox`). Para abrir la bandeja directamente, usa `http://127.0.0.1:8080/mobile#!/inbox` (el servidor atiende `/mobile` y el resto de la ruta va en el fragmento), o entra desde el botón de la pantalla de inicio.
 - **`POST /api/register.json` exige `categories`.** La documentación de upstream lo presenta como opcional, pero sin el campo responde 400. Envía `"categories": []` para registrar un usuario sin categorías.
+- **`user-delete` deja reservado el correo.** Borrar un usuario con `userdata user-delete` no libera su correo. Un registro posterior con ese correo (por la web o por la API) devuelve un `500` genérico, «failed to sign up» (en el log del servidor: `UNIQUE constraint failed: user.email`). Usa otro correo.
 - **`/mcp` sin token responde 400, no 401.** Sin la cabecera `Authorization` el servidor responde `400` con `token is empty`; con un token inválido responde `401`. En los dos casos no hay acceso: el token sigue siendo la barrera.
+
+## 11. Subir a la bandeja desde el PC
+
+Los recibos y extractos llegan a la bandeja desde el celular (sección 4) o desde el PC, de dos formas.
+
+### El botón de la web de escritorio
+
+En `http://127.0.0.1:8080/desktop#/inbox` hay dos botones: **Subir extracto** (un archivo) y **Subir recibos** (una o varias imágenes a la vez). Los recibos se comprimen y se suben uno por uno, con una barra de progreso; al terminar sale un aviso («N recibos en la bandeja») y la lista se recarga con los recibos nuevos en «Pendientes».
+
+### El script `upload-inbox`
+
+Para subir desde la terminal o desde un script, sin abrir el navegador:
+
+```powershell
+# Token de tipo api (no el token MCP). Una vez:
+docker compose -f ai-clients/docker-compose.yml exec ezbookkeeping /ezbookkeeping/ezbookkeeping userdata user-session-new -n <usuario> -t api -e 31536000
+$env:EBK_API_TOKEN = '<token>'   # EBK_URL solo si el servidor no está en http://127.0.0.1:8080
+
+.\ai-clients\scripts\upload-inbox.ps1 recibo1.jpg recibo2.jpg
+.\ai-clients\scripts\upload-inbox.ps1 -Kind statement .\extracto.csv
+```
+
+En Git Bash, Linux o macOS: `ai-clients/scripts/upload-inbox.sh [--kind receipt|statement] <archivo>...`.
+
+- El tipo se deduce de la extensión: imágenes (`jpg`, `jpeg`, `png`, `gif`, `webp`) → recibo; `csv`, `txt`, `ofx`, `qif`, `pdf`, `xlsx`, `xls` → extracto. `-Kind` / `--kind` lo fuerza.
+- Por cada ítem creado imprime su id y su tipo (`12 receipt`). Sale con código `0` si todo se subió, `1` si algún archivo falló (el motivo va a la salida de error) y `2` si falta el token o los argumentos. Nunca imprime el token.
+- Solo un token **api** puede llamar a la API desde un script; el token MCP solo vale para `/mcp`. El compose activa los tokens api con `EBK_SECURITY_ENABLE_API_TOKEN` (por defecto `true`). Si lo pones en `false`, `user-session-new -t api` responde «api token is not enabled».
+- El token api da acceso de lectura y escritura a toda la API de tu cuenta, igual que una sesión: protégelo como el token MCP y no lo guardes en el repositorio.
 
 ## Problemas frecuentes
 
 - **HTTP 401 / «token MCP ausente o incorrecto»**: el token está mal copiado, lo revocaste o caducó. Crea otro con `userdata user-session-new`. Sin token, el servidor responde 400 (`token is empty`; ver la sección 10).
-- **Claude Code muestra `ebk` como «Pending approval»**: ejecuta `claude` en esa carpeta y aprueba el servidor.
+- **Claude Code muestra `ebk` como «Pending approval»** (en `claude mcp list`): es el `.mcp.json` del proyecto, que hay que aprobar una vez en una sesión interactiva. Ejecuta `claude` en esa carpeta y aprueba el servidor. La receta `-p` de la sección 5 (`--mcp-config … --strict-mcp-config`) no necesita esa aprobación: usa el archivo que le pasas, así que funciona aunque `claude mcp list` siga mostrando «Pending approval».
 - **`check-mcp` dice `FALTA`**: el servidor no tiene las herramientas de Finanzas. Comprueba que el contenedor se construyó desde esta rama.
 - **Un comando no encuentra cuentas o categorías**: la app todavía no tiene esas cuentas o categorías. Créalas en la aplicación; los comandos no las crean. Las categorías deben ser de dos niveles (categoría → subcategoría); con solo primer nivel el catálogo llega vacío (sección 10).
 - **Codex no encuentra las skills**: la carpeta `.agents/skills/` debe estar en la raíz del proyecto desde la que ejecutas Codex, o en `~/.agents/skills/`. El nombre de cada carpeta debe coincidir con su `name`. `codex debug prompt-input "hola"` lista las skills que ve Codex.
