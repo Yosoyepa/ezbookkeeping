@@ -20,7 +20,7 @@ type InboxItem struct {
     FileExtension        string `xorm:"VARCHAR(10) NOT NULL"`
     OriginalFileName     string `xorm:"VARCHAR(255)"`
     Note                 string `xorm:"VARCHAR(255)"`
-    ResultTransactionIds string `xorm:"VARCHAR(2048)"` // ids separados por coma
+    ResultTransactionIds string `xorm:"TEXT"`          // ids separados por coma, sin límite (un extracto tiene hasta 500 filas)
     ProcessedNote        string `xorm:"VARCHAR(1024)"` // resumen o motivo del descarte
     CreatedIp            string `xorm:"VARCHAR(39)"`
     CreatedUnixTime      int64  `xorm:"INDEX(IDX_inbox_item_uid_deleted_status_created)"`
@@ -35,7 +35,10 @@ type InboxItem struct {
   guarda `PictureId`. Al resolverse, la foto se vincula a la **primera** transacción creada.
   La PWA **nunca** llama a `remove_unused` sobre una foto que pertenece a un ítem de la bandeja.
 - **Extractos**: se guardan con el `ObjectStorage` de upstream en `inbox_documents/<uid>/<itemId>.<ext>`.
-  Máximo 20 MB, con extensiones `pdf, csv, xlsx, xls, txt, ofx, qif`.
+  Máximo 20 MB, con extensiones `pdf, csv, xlsx, xls, txt, ofx, qif`. El límite se impone al **cuerpo completo** de la petición
+  (20 MB + 1 MB de margen para el resto del multipart) **antes** de parsearlo, y solo se acepta **un** archivo por petición.
+- **Una sola instancia**: la importación se serializa por usuario con un candado en la memoria del proceso (§3). El modo de varias
+  instancias contra la misma base de datos no está soportado.
 
 ## 2. API REST para la PWA (sesión normal, prefijo `/api/v1`)
 
@@ -75,10 +78,10 @@ Reglas comunes:
 | Herramienta | Entrada | Salida |
 |---|---|---|
 | `list_inbox_items` | `status?` = pending, `kind?`, `limit?` = 20 | `[{id, kind, status, created_time, note, original_file_name}]` |
-| `get_inbox_item` | `id` | receipt → `MCPImageContent` + texto con los metadatos. statement csv/txt/ofx/qif → texto. pdf/xlsx → `MCPEmbeddedResource` (blob base64) **y** `download_url` de corta duración (≤ 15 min) |
-| `resolve_inbox_item` | `id`, `transactions: TxRow[]` (1..50), `note?`, `dry_run` | resultado por fila, como en el lote. Si no es dry_run y se creó ≥ 1 transacción: el ítem pasa a processed, la foto queda vinculada y se guardan los ids |
+| `get_inbox_item` | `id` | receipt → `MCPImageContent` + texto con los metadatos. statement csv/txt/ofx/qif → texto. pdf/xlsx → `MCPEmbeddedResource` (blob base64) **solo hasta 10 MB** (`content_included` = true) **y** `download_url` de corta duración (≤ 15 min, un solo uso). **Por encima de 10 MB** (el límite de subida es 20 MB) no se embebe: solo `download_url`, con `content_included` = false y un texto en `content_note` que lo explica |
+| `resolve_inbox_item` | `id`, `transactions: TxRow[]` (1..50), `note?`, `dry_run` | resultado por fila, como en el lote, más `inbox_item_status` y, si queda pendiente por errores, `next_step`. Si no es dry_run: la foto queda vinculada a la primera transacción creada y se guardan los ids (acumulados con los anteriores, sin duplicar). El ítem pasa a processed **solo si ninguna fila termina en `error`** (las `duplicate` no cuentan como error) y hay transacciones creadas (ahora o en una llamada anterior). Si alguna fila falla, el ítem **sigue pending**, `processed_note` lista las filas fallidas y `next_step` dice: "fix the failed rows and call again" (repetir es seguro: las ya creadas salen como `duplicate`) |
 | `discard_inbox_item` | `id`, `reason` | ok |
-| `add_transactions_batch` | `transactions: TxRow[]` (1..500), `source_label` (obligatorio, p. ej. `"bancolombia-2026-10"`), `skip_duplicates?` = true, `inbox_item_id?` (si viene y no es dry_run: el extracto de la bandeja pasa a processed con los ids creados y un resumen en `processed_note`), `dry_run` | `{created, duplicates, errors, rows:[{index, status: created\|would_create\|duplicate\|error, transaction_id?, duplicate_of?, message?, normalized_amount}]}` |
+| `add_transactions_batch` | `transactions: TxRow[]` (1..500), `source_label` (obligatorio, p. ej. `"bancolombia-2026-10"`), `skip_duplicates?` = true, `inbox_item_id?` (si viene y no es dry_run: el extracto de la bandeja pasa a processed con los ids creados y un resumen en `processed_note`, con la misma regla de resolución parcial que `resolve_inbox_item`: si alguna fila falla sigue pending), `dry_run` | `{created, duplicates, errors, rows:[{index, status: created\|would_create\|duplicate\|error, transaction_id?, duplicate_of?, message?, normalized_amount}], inbox_item_status?, next_step?, warning?}` |
 | `update_transaction` | `id`, `category_name?`, `tags?` (reemplaza), `comment?`, `amount?`, `time?`, `account_name?`, `dry_run` | transacción antes y después |
 | `get_spending_summary` | `start_time`, `end_time` (RFC 3339), `type` (expense\|income), `group_by` (category\|month\|account\|tag\|comment_merchant), `currency?`, `top?` = 20 | `[{key, total, count, share}]` + `{grand_total, currency, period}` |
 
@@ -88,6 +91,22 @@ destination_account_name?, destination_amount?, tags?, comment?`), con dos cambi
 **Duplicados** (`pkg/aiimport/dedupe.go`): se considera duplicada una fila con el mismo uid, cuenta, tipo y monto, a ≤ 1 día de una
 transacción existente y con comentario normalizado igual o contenido en el otro. Para normalizar: minúsculas, sin tildes,
 solo `[a-z0-9]` y sin el sufijo `[origen: …]`. Las filas repetidas dentro del mismo lote también cuentan como duplicadas.
+**Comentario vacío**: si el comentario normalizado de alguna de las dos transacciones está vacío, **no** se considera "contenido" en el
+otro; solo es duplicado cuando **ambos** están vacíos **y** caen el mismo día calendario (en la zona horaria de la fila importada, la
+de su `time` RFC 3339), con la misma cuenta, tipo y monto. Esto vale también dentro del lote.
+
+**Atomicidad** (`pkg/aiimport/lock.go`): `Import`, `ResolveInboxItem` y `add_transactions_batch` con `inbox_item_id` se serializan **por
+usuario** con un mutex en memoria que cubre desde la comprobación de duplicados hasta la escritura y la finalización del ítem. Antes de
+escribir, el ítem se reserva con una actualización condicional `pending → pending` guardada por `updated_unix_time`, así que un
+cambio concurrente sobre el mismo ítem falla limpio antes de crear nada. El despliegue es de una sola instancia: el modo de varias
+instancias no está soportado.
+
+**Dry run = escritura**: el dry run ejecuta las mismas validaciones de dominio de `TransactionService` que la escritura
+(`VerifyNewTransaction`: cuentas ocultas o padre, origen = destino, montos distintos en una transferencia de la misma moneda, categoría,
+etiquetas y que no se agregue antes de un ajuste de saldo), de modo que no devuelve `would_create` para lo que la escritura rechazaría.
+
+**Descarga de un solo uso** (`download_url`): el consumo del código se registra en memoria; tras un reinicio, o con varias instancias, un
+enlace usado podría descargarse otra vez hasta que caduque (≤ 15 min). Limitación **aceptada por alcance** (una sola instancia).
 
 `comment_merchant` agrupa por el comentario normalizado, sin el sufijo de origen y truncado a 40 caracteres.
 
@@ -107,7 +126,9 @@ Pruebas con tabla de casos en `pkg/aiimport/amount_test.go` (≥ 20 casos).
 - **Página `/inbox`** móvil (`src/views/mobile/inbox/ListPage.vue`): pestañas Pendientes / Procesados / Descartados,
   miniatura (recibos) o icono y nombre (extractos), nota, fecha, y acciones descartar, reabrir y borrar. Si el ítem ya se procesó, enlace a
   sus transacciones. Botón "Subir extracto" (input file sin capture).
-- **Escritorio**: página `/inbox` equivalente, más sencilla (tabla), y entrada en el menú lateral.
+- **Escritorio**: página `/inbox` equivalente, más sencilla (tabla), y entrada en el menú lateral. El enlace "Transacciones (N)" de un ítem
+  se construye a partir de `resultTransactionIds` (también en un ítem pendiente con resolución parcial), no buscando texto en los
+  comentarios: abre una lista de las N transacciones y cada una se abre en el diálogo de detalle (modo lectura) que ya existe.
 - Servicios en `src/lib/services.ts`, tipos en `src/models/inbox.ts`, store `src/stores/inbox.ts`.
 - Textos en `en.json` y `es.json` (los demás idiomas caen al inglés).
 - Pantalla vacía de Pendientes: "Procesa tus recibos desde tu CLI con /recibos".

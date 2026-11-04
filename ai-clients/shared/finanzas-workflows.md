@@ -20,9 +20,10 @@ El servidor de datos es ezBookkeeping. Sus herramientas MCP aparecen con el nomb
 
    Si el monto no es claro, pregunta. Nunca lo adivines. Si el servidor responde un error de monto, pide al usuario que lo reenvíe sin separadores de miles.
 5. **Origen trazable.** Toda transacción creada por estas herramientas lleva la etiqueta `ia` y un comentario que termina en `[origen: ...]`. No quites ni cambies esa etiqueta.
-6. **Duplicados.** Una fila marcada como `duplicate` no se fuerza. Muéstrala al usuario y deja que decida.
+6. **Duplicados.** Una fila marcada como `duplicate` no se fuerza. Muéstrala al usuario y deja que decida. Una fila es duplicada si tiene la misma cuenta, tipo y monto, a un día o menos de otra transacción y con una descripción parecida. Si alguna de las dos no tiene descripción, solo cuenta como duplicada cuando **ninguna** la tiene y caen el mismo día; por eso conviene escribir siempre el comercio en `comment`.
 7. **Lo que no se lee, se pregunta.** Si un campo es ilegible (fecha, total, comercio o cuenta), pregúntalo. Nunca lo rellenes con un valor plausible.
 8. **Secretos.** Nunca muestres, copies ni guardes el token MCP. Las herramientas se llaman a través del servidor `ebk`, que ya tiene configurado el token.
+9. **Filas con error y resolución parcial.** Una fila `error` no se crea, pero las demás sí. Si **alguna** fila de un ítem de la bandeja termina en `error`, el ítem **sigue pendiente** (`inbox_item_status` = `pending`): se guardan los ids de lo ya creado y `processed_note` lista las filas fallidas. La respuesta trae `next_step`: arregla las filas fallidas (pregunta al usuario lo que falte), muestra la tabla y vuelve a llamar con el mismo ítem. Repetir es seguro: las filas ya creadas salen como `duplicate` y no se vuelven a crear. El ítem pasa a `processed` cuando ninguna fila falla (las `duplicate` no cuentan como error).
 
 ## Herramientas MCP que usan los comandos
 
@@ -32,10 +33,10 @@ El servidor de datos es ezBookkeeping. Sus herramientas MCP aparecen con el nomb
 | `query_all_transaction_categories` | Catálogo de categorías. Siempre antes de escribir. |
 | `query_transactions` | Buscar transacciones: `start_time`, `end_time` (RFC 3339), `type`, `category_name`, `account_name`, `keyword`, `count` (50 o menos) y `page`. |
 | `list_inbox_items` | Ver la bandeja: `status` (pending), `kind` (1 = recibo, 2 = extracto) y `limit`. |
-| `get_inbox_item` | Abrir un ítem. Recibo: imagen y metadatos. Extracto CSV, TXT, OFX o QIF: texto. Extracto PDF o XLSX: archivo incrustado y `download_url` válido 15 minutos. |
-| `resolve_inbox_item` | Convertir un recibo en transacciones (1 a 50 filas) y marcarlo como procesado. |
+| `get_inbox_item` | Abrir un ítem. Recibo: imagen y metadatos. Extracto CSV, TXT, OFX o QIF: texto. Extracto PDF o XLSX: archivo incrustado y `download_url` válido 15 minutos, **solo hasta 10 MB**; si pesa más, no se incrusta (`content_included` = false, con la explicación en `content_note`) y debes descargarlo desde `download_url` (de un solo uso, por ejemplo con `curl`) y leerlo en local. |
+| `resolve_inbox_item` | Convertir un recibo en transacciones (1 a 50 filas) y marcarlo como procesado cuando ninguna fila falla (regla común 9). |
 | `discard_inbox_item` | Descartar un ítem con un `reason`. |
-| `add_transactions_batch` | Crear transacciones en lote (1 a 500 filas por llamada) con `source_label`. Opcional: `inbox_item_id`, que cierra el extracto de la bandeja. |
+| `add_transactions_batch` | Crear transacciones en lote (1 a 500 filas por llamada) con `source_label`. Opcional: `inbox_item_id`, que cierra el extracto de la bandeja cuando ninguna fila falla (regla común 9). |
 | `update_transaction` | Cambiar `category_name`, `tags` (reemplaza todas), `comment`, `amount`, `time` o `account_name` de una transacción. |
 | `get_spending_summary` | Totales agregados entre `start_time` y `end_time`, con `type` (expense o income), `group_by` (category, month, account, tag o comment_merchant) y `top`. |
 
@@ -51,7 +52,7 @@ Procesa los recibos pendientes de la bandeja. Cada recibo es una foto (`kind` 1)
 4. Propón las filas: `type` expense, `time`, la cuenta (pregúntala si no es clara), la categoría del catálogo, `amount` tal como aparece en el total, y `comment` con el comercio.
 5. Si el recibo tiene partes con categorías distintas, propón varias filas. La foto queda vinculada a la primera transacción creada.
 6. Llama a `resolve_inbox_item` con `dry_run=true` y muestra una tabla con fila, fecha, comercio, categoría, cuenta y monto normalizado. Pide confirmación.
-7. Con la confirmación, repite la llamada con `dry_run=false`.
+7. Con la confirmación, repite la llamada con `dry_run=false`. Mira `inbox_item_status`: si es `pending` y hay filas con `error`, aplica la regla común 9 (arregla las filas fallidas y llama de nuevo; no descartes el recibo).
 8. Si el recibo no sirve (no es un gasto, es ilegible o es un duplicado evidente), propón `discard_inbox_item` con un motivo y espera confirmación.
 9. Cierra con un resumen: recibos procesados, transacciones creadas, descartados y pendientes que quedan.
 
@@ -67,7 +68,7 @@ Importa las filas de un extracto bancario. El modelo hace de analizador, así qu
 6. Llama a `add_transactions_batch` con `dry_run=true`. Muestra el resumen (creadas, duplicadas y errores) y la tabla por fila. Si hay más de 500 filas, divídelas en lotes con el mismo `source_label`.
 7. **Cuadre.** La suma firmada de las filas (ingresos positivos y gastos negativos) debe igualar la variación de saldo del extracto, es decir, saldo final menos saldo inicial, o el total que indique el documento. Si no cuadra, muestra la diferencia y no confirmes hasta que el usuario decida.
 8. Con la confirmación, repite la llamada con `dry_run=false`. Si el origen es la bandeja, añade `inbox_item_id` con el id del extracto. Si hay varios lotes, pásalo solo en el último.
-9. Con `inbox_item_id`, el servidor cierra el extracto de la bandeja y queda procesado. Si el origen es un archivo local, no hay ítem que cerrar.
+9. Con `inbox_item_id`, el servidor cierra el extracto de la bandeja y queda procesado, siempre que ninguna fila falle. Si alguna falla, el extracto **sigue pendiente** con lo ya creado guardado: aplica la regla común 9 (arregla las filas fallidas y repite la llamada con todas las filas; las ya creadas salen como `duplicate`). Si el origen es un archivo local, no hay ítem que cerrar.
 10. Cierra con filas creadas, duplicadas omitidas, errores y la diferencia de cuadre, si la hay.
 
 ## /insights [periodo]
