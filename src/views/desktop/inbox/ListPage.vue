@@ -70,11 +70,12 @@
                                 </td>
                                 <td>{{ formatCreatedTime(item) }}</td>
                                 <td>
-                                    <router-link class="inbox-item-transactions" :to="{ path: '/transaction/list', query: { keyword: 'inbox:' + item.id + ']' } }"
-                                                 v-if="item.status === InboxItemStatus.Processed">
+                                    <v-btn class="inbox-item-transactions px-2" color="primary" density="comfortable" variant="text"
+                                           @click="showTransactions(item)"
+                                           v-if="item.resultTransactionIds.length">
                                         {{ tt('Transactions') }} ({{ item.resultTransactionIds.length }})
-                                    </router-link>
-                                    <span v-else>{{ item.status === InboxItemStatus.Discarded ? item.processedNote : item.note }}</span>
+                                    </v-btn>
+                                    <div class="inbox-item-note" v-if="getItemNote(item)">{{ getItemNote(item) }}</div>
                                 </td>
                                 <td>
                                     <div class="d-flex align-center">
@@ -107,6 +108,24 @@
             </v-row>
 
             <input ref="statementInput" type="file" style="display: none" :accept="INBOX_STATEMENT_FILE_ACCEPT" @change="onStatementSelected($event)" />
+            <v-dialog width="480" scrollable v-model="showTransactionsDialog">
+                <v-card>
+                    <v-card-title>{{ tt('Transactions') }} ({{ selectedTransactionIds.length }})</v-card-title>
+                    <v-card-text class="pa-0">
+                        <v-list>
+                            <v-list-item :key="transactionId" v-for="(transactionId, index) in selectedTransactionIds"
+                                         :title="tt('Transaction') + ' ' + (index + 1)" :subtitle="transactionId"
+                                         @click="openTransaction(transactionId)" />
+                        </v-list>
+                    </v-card-text>
+                    <v-card-actions>
+                        <v-spacer/>
+                        <v-btn color="default" variant="text" @click="showTransactionsDialog = false">{{ tt('Close') }}</v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
+
+            <edit-dialog ref="editDialog" :type="TransactionEditPageType.Transaction" />
             <confirm-dialog ref="confirmDialog"/>
             <snack-bar ref="snackbar" />
         </template>
@@ -116,12 +135,15 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/desktop/ConfirmDialog.vue';
 import SnackBar from '@/components/desktop/SnackBar.vue';
+import EditDialog from '@/views/desktop/transactions/list/dialogs/EditDialog.vue';
 
 import { ref, useTemplateRef } from 'vue';
 
 import { useI18n } from '@/locales/helpers.ts';
 
 import { useInboxStore } from '@/stores/inbox.ts';
+
+import { TransactionEditPageType } from '@/views/base/transactions/TransactionEditPageBase.ts';
 
 import {
     InboxItem,
@@ -144,6 +166,7 @@ import {
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
+type EditDialogType = InstanceType<typeof EditDialog>;
 
 const { tt, formatDateTimeToShortDateTime } = useI18n();
 
@@ -151,7 +174,11 @@ const inboxStore = useInboxStore();
 
 const confirmDialog = useTemplateRef<ConfirmDialogType>('confirmDialog');
 const snackbar = useTemplateRef<SnackBarType>('snackbar');
+const editDialog = useTemplateRef<EditDialogType>('editDialog');
 const statementInput = useTemplateRef<HTMLInputElement>('statementInput');
+
+const showTransactionsDialog = ref<boolean>(false);
+const selectedTransactionIds = ref<string[]>([]);
 
 const status = ref<InboxItemStatus>(InboxItemStatus.Pending);
 const items = ref<InboxItem[]>([]);
@@ -296,6 +323,37 @@ function getItemName(item: InboxItem): string {
 
 function formatCreatedTime(item: InboxItem): string {
     return formatDateTimeToShortDateTime(parseDateTimeFromUnixTime(item.createdTime));
+}
+
+// The text under the transactions button: the reason of a discarded item, the failed rows of a partially processed item or the note of the upload.
+// Processed items only show their transactions.
+function getItemNote(item: InboxItem): string {
+    if (item.status === InboxItemStatus.Discarded) {
+        return item.processedNote || '';
+    }
+
+    if (item.status === InboxItemStatus.Pending) {
+        return item.processedNote || item.note || '';
+    }
+
+    return '';
+}
+
+// The transactions of an item are listed from the ids saved in the item (not by searching the comments, which the user can edit and
+// which carry the label of the statement instead of the id of the item)
+function showTransactions(item: InboxItem): void {
+    selectedTransactionIds.value = item.resultTransactionIds;
+    showTransactionsDialog.value = true;
+}
+
+function openTransaction(transactionId: string): void {
+    editDialog.value?.open({
+        id: transactionId
+    }).catch(error => {
+        if (error) {
+            snackbar.value?.showError(error);
+        }
+    });
 }
 
 function runItemAction(action: Promise<boolean>): void {
