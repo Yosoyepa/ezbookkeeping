@@ -25,6 +25,7 @@ type ModelContextProtocolAPI struct {
 	accounts              *services.AccountService
 	users                 *services.UserService
 	tokens                *services.TokenService
+	inboxItems            *services.InboxItemService
 }
 
 // Initialize a model context protocol api singleton instance
@@ -40,6 +41,7 @@ var (
 		accounts:              services.Accounts,
 		users:                 services.Users,
 		tokens:                services.Tokens,
+		inboxItems:            services.InboxItems,
 	}
 )
 
@@ -284,6 +286,11 @@ func (a *ModelContextProtocolAPI) GetAccountService() *services.AccountService {
 // GetUserService implements the MCPAvailableServices interface
 func (a *ModelContextProtocolAPI) GetUserService() *services.UserService {
 	return a.users
+}
+
+// GetInboxItemService implements the MCPAvailableServices interface
+func (a *ModelContextProtocolAPI) GetInboxItemService() *services.InboxItemService {
+	return a.inboxItems
 }
 
 // getMCPVersion returns the MCP protocol version from the request header

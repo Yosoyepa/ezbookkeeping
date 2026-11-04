@@ -141,6 +141,14 @@ func updateAllDatabaseTablesStructure(c *core.CliContext) error {
 
 	log.BootInfof(c, "[database.updateAllDatabaseTablesStructure] transaction picture table maintained successfully")
 
+	err = datastore.Container.UserDataStore.SyncStructs(new(models.InboxItem))
+
+	if err != nil {
+		return err
+	}
+
+	log.BootInfof(c, "[database.updateAllDatabaseTablesStructure] inbox item table maintained successfully")
+
 	err = datastore.Container.UserDataStore.SyncStructs(new(models.UserCustomIcon))
 
 	if err != nil {
