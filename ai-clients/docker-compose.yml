@@ -13,6 +13,10 @@ services:
         # Patrón de `go test -skip`, no un booleano. Omite las funciones TestExchangeRatesApi* de
         # pkg/exchangerates, que llaman a APIs externas de tipos de cambio.
         SKIP_TESTS: "TestExchangeRatesApi"
+        # Heap de Node para el lint y el build del frontend (vue-tsc necesita más de 2 GB). Sin esto,
+        # Node fija el heap según la memoria de la VM de Docker y el build falla con «heap out of memory»
+        # cuando Docker/WSL tiene 10 GB o menos.
+        BUILD_NODE_OPTIONS: "${EBK_BUILD_NODE_OPTIONS:---max-old-space-size=6144}"
     image: ezbookkeeping-ai:local
     restart: unless-stopped
     ports:
