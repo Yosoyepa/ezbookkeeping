@@ -299,6 +299,10 @@ func TestGetInboxItem_TextStatements(t *testing.T) {
 	assert.True(t, strings.HasSuffix(text, "\n---\n"+utf8Csv))
 	assert.Equal(t, utf8Csv, bodyOf(t, result))
 
+	// Claude Code gives the model the structured content instead of the text blocks, so it has the content too, and the metadata does not repeat it
+	assert.Equal(t, utf8Csv, result.StructuredContent["content"])
+	assert.NotContains(t, strings.TrimSuffix(text, utf8Csv), `"content":`)
+
 	meta := textOf(t, result)
 	assert.Equal(t, "statement", meta["kind"])
 	assert.Equal(t, "text/csv", meta["mime_type"])
@@ -311,6 +315,7 @@ func TestGetInboxItem_TextStatements(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(result.Content))
 	assert.Equal(t, "Descripción;Año\n", bodyOf(t, result))
+	assert.Equal(t, "Descripción;Año\n", result.StructuredContent["content"])
 }
 
 func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T) {

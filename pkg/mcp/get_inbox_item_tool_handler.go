@@ -45,6 +45,7 @@ type MCPGetInboxItemResponse struct {
 	DownloadUrl          string   `json:"download_url,omitempty" jsonschema_description:"Temporary url (valid 15 minutes, single use) to download the statement file, e.g. with curl, when the client cannot read the embedded resource"`
 	ContentIncluded      bool     `json:"content_included" jsonschema_description:"Whether the file content is included in this response"`
 	ContentNote          string   `json:"content_note,omitempty" jsonschema_description:"Why the file content is not included in this response (a pdf or spreadsheet bigger than 10 MB can only be downloaded with download_url)"`
+	Content              string   `json:"content,omitempty" jsonschema_description:"Complete text of a csv/txt/ofx/qif statement (the same text that follows the --- line of the text block)"`
 	ResultTransactionIds []string `json:"result_transaction_ids,omitempty" jsonschema_description:"Ids of the transactions created from this item"`
 	ProcessedNote        string   `json:"processed_note,omitempty" jsonschema_description:"Summary or reason saved when the item was processed or discarded"`
 }
@@ -65,7 +66,7 @@ func (h *mcpGetInboxItemToolHandler) Name() string {
 
 // Description returns the description of the MCP tool
 func (h *mcpGetInboxItemToolHandler) Description() string {
-	return "Get an item of the inbox with its file. The text of the response is the metadata as json (id, kind, original_file_name, size_bytes...), and for a statement a line with --- and then: the complete text of a csv/txt/ofx/qif statement, or a note for a pdf/xlsx statement. A receipt also returns the image; a pdf/xlsx statement also returns an embedded resource (only up to 10 MB, bigger files only have the temporary download_url). Read the amounts, date and merchant only from the file, never guess them."
+	return "Get an item of the inbox with its file. The text of the response is the metadata as json (id, kind, original_file_name, size_bytes...), and for a statement a line with --- and then: the complete text of a csv/txt/ofx/qif statement (also in the content field), or a note for a pdf/xlsx statement. A receipt also returns the image; a pdf/xlsx statement also returns an embedded resource (only up to 10 MB, bigger files only have the temporary download_url). Read the amounts, date and merchant only from the file, never guess them."
 }
 
 // InputType returns the input type for the MCP tool request
@@ -162,6 +163,12 @@ func (h *mcpGetInboxItemToolHandler) Handle(c *core.WebContext, callToolReq *MCP
 
 	if fileBlock != nil {
 		blocks = append(blocks, fileBlock)
+	}
+
+	// Claude Code gives the model the structured content instead of the text blocks (it only keeps the image and resource blocks),
+	// so the text of a statement is also in the structured response. It is set after the text block was built to not repeat it there.
+	if item.Kind == models.INBOX_ITEM_KIND_STATEMENT && isTextStatement(item.FileExtension) {
+		response.Content = textAfterMetadata
 	}
 
 	return response, blocks, nil
