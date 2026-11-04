@@ -136,12 +136,29 @@ Para revocar un token: `userdata user-session-revoke -t <token>`. Para ver las s
 
 ## 4. Celular por Tailscale
 
-1. Instala Tailscale en el PC y en el celular con la misma cuenta.
-2. Anota la IP `100.x.y.z` del PC: la ves en la app de Tailscale o con `tailscale ip -4`.
-3. En `ai-clients/.env` pon `EBK_BIND_IP=<esa IP>` y `EBK_SERVER_DOMAIN=<esa IP o su nombre MagicDNS>`. Después vuelve a ejecutar `docker compose -f ai-clients/docker-compose.yml up -d`. `EBK_SERVER_DOMAIN` importa: upstream escribe esa dirección en las URL absolutas de las fotos, y con `localhost` el celular no las vería.
-4. En el celular abre `http://<IP>:8080`.
+Instala Tailscale en el PC y en el celular con la misma cuenta. El nombre MagicDNS del PC lo ves con `tailscale status` o en la consola de Tailscale (por ejemplo `mi-pc.tailXXXX.ts.net`).
 
-El compose publica el puerto 8080 en **dos** direcciones: `127.0.0.1` (tus CLI en este PC) y `EBK_BIND_IP` (el celular). No lo publica en todas las interfaces, así que no hace falta abrir puertos en el router. Si dejas `EBK_BIND_IP` en `127.0.0.1`, solo queda esa dirección.
+### Recomendado: Tailscale Serve
+
+Tailscale reenvía el tráfico de tu tailnet al `127.0.0.1:8080` del PC. No abre puertos en el router ni toca el firewall de Windows.
+
+1. En `ai-clients/.env` pon `EBK_SERVER_DOMAIN=<nombre MagicDNS>` y `EBK_SERVER_ROOT_URL=http://<nombre MagicDNS>:18080/`, y reinicia con `docker compose -f ai-clients/docker-compose.yml up -d`. Upstream escribe esa URL en las direcciones absolutas de las fotos; con `localhost`, el celular no las vería.
+2. Publica el servidor en la tailnet (con `--bg` queda activo tras reiniciar; quítalo con `tailscale serve --http=18080 off`):
+
+   ```powershell
+   tailscale serve --bg --http=18080 http://127.0.0.1:8080
+   ```
+
+3. En el celular abre `http://<nombre MagicDNS>:18080/mobile`. Usa el **nombre**, no la IP `100.x`: Serve enruta por nombre y por la IP responde 404.
+
+Comprobado en Windows 11 con Docker Desktop y WSL en modo `mirrored` (2026-11-04, desde el PC a través de la tailnet): página móvil 200, inicio de sesión y subida de un recibo 200, la foto se descarga por su URL absoluta, y `/mcp` responde «ip address is forbidden» desde la tailnet. El MCP sigue siendo **solo local**: Serve reenvía la IP del cliente de Tailscale y no está en `EBK_MCP_MCP_ALLOWED_REMOTE_IPS`. No se ha probado desde un celular real.
+
+- Usa el puerto **18080** (u otro libre) en la tailnet. Serve en el 8080 choca con el 8080 que WSL refleja y se queda colgado.
+- **HTTPS** (para instalar la PWA en la pantalla de inicio): activa HTTPS en la consola de administración de tu tailnet (sin eso, `tailscale serve --https` responde «Serve is not enabled on your tailnet»), usa `tailscale serve --bg --https=443 http://127.0.0.1:8080` y `EBK_SERVER_ROOT_URL=https://<nombre MagicDNS>/`. Sin probar. La cámara y la subida funcionan también por HTTP.
+
+### Alternativa: publicar en la IP de Tailscale (`EBK_BIND_IP`)
+
+`EBK_BIND_IP=<IP 100.x>` en `.env` hace que el compose publique el 8080 también en esa IP. **En Windows con Docker Desktop y WSL en modo `mirrored` no funciona**: Docker acepta la publicación, pero la IP de Tailscale no responde (comprobado el 2026-11-04). Úsala solo en Linux o en un Docker que escuche directamente en las interfaces del host, y entonces abre `http://<IP>:8080/mobile`. Si dejas `EBK_BIND_IP` en `127.0.0.1`, el compose solo publica en esa dirección.
 
 ## 5. Instalar en tu CLI (cinco pasos o menos)
 
@@ -274,7 +291,7 @@ En Git Bash, Linux o macOS: `ai-clients/scripts/check-mcp.sh`. El script sale co
 ## 8. Seguridad
 
 - **El token MCP es la barrera real.** Da permiso de lectura y escritura sobre tus finanzas. Vive en las variables de entorno de tu usuario o en la configuración global de tu CLI. Nunca va al repositorio. Para comprobarlo: `git grep -nE 'Bearer [A-Za-z0-9]{20,}'` no debe devolver nada.
-- **Puertos.** El compose publica el 8080 solo en `127.0.0.1` y en `EBK_BIND_IP`, nunca en todas las interfaces.
+- **Puertos.** El compose publica el 8080 solo en `127.0.0.1` y en `EBK_BIND_IP`, nunca en todas las interfaces. Con Tailscale Serve (sección 4) el celular entra por la tailnet y `/mcp` sigue respondiendo solo en local.
 - **Filtro por IP (secundario).** Con Docker, el servidor puede ver la IP del gateway de Docker en lugar de la de tu PC o la del celular. La lista por defecto (`172.*.*.*` y `192.168.65.*`) está pensada para ese caso, pero todavía no está comprobada con Docker Desktop en Windows. Si el filtro no distingue tu PC del celular, la barrera sigue siendo el token. Para filtrar por la IP real del cliente, ejecuta el servidor fuera de Docker. Revisa en `docker compose -f ai-clients/docker-compose.yml logs ezbookkeeping` la IP que aparece en las líneas de `/mcp` (el cuarto campo de cada línea) y ajusta `EBK_MCP_MCP_ALLOWED_REMOTE_IPS`.
 - **Token de agy.** Va en texto plano en `~/.gemini/config/mcp_config.json` (ver la advertencia de la sección 5).
 - **Una sola instancia del servidor.** Las herramientas de importación serializan las escrituras por usuario con un candado en la memoria del proceso (comprobación de duplicados, escritura y cierre del ítem de la bandeja). Eso solo es seguro con **una** instancia del servidor sobre la base de datos; varias instancias no están soportadas.

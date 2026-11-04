@@ -30,6 +30,8 @@ services:
       EBK_SECURITY_SECRET_KEY: "${EBK_SECURITY_SECRET_KEY:?Define EBK_SECURITY_SECRET_KEY en ai-clients/.env}"
       # Nombre o IP con la que abres el servidor. Upstream lo usa en las URL absolutas de las fotos: con localhost, el celular no las verá.
       EBK_SERVER_DOMAIN: "${EBK_SERVER_DOMAIN:-localhost}"
+      # URL base de esas URL absolutas. Con Tailscale Serve: http://<nombre MagicDNS>:<puerto de serve>/ (README §4).
+      EBK_SERVER_ROOT_URL: "${EBK_SERVER_ROOT_URL:-%(protocol)s://%(domain)s:%(http_port)s/}"
       EBK_MCP_ENABLE_MCP: "true"
       # Permite los tokens de tipo api (userdata user-session-new -t api), que usa scripts/upload-inbox. Sin esto, upstream los rechaza.
       EBK_SECURITY_ENABLE_API_TOKEN: "${EBK_SECURITY_ENABLE_API_TOKEN:-false}"
