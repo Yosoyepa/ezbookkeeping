@@ -22,6 +22,7 @@ import {
     BASE_AMAP_API_PROXY_URL_PATH,
     DEFAULT_API_TIMEOUT,
     DEFAULT_UPLOAD_API_TIMEOUT,
+    DEFAULT_INBOX_UPLOAD_API_TIMEOUT,
     DEFAULT_EXPORT_API_TIMEOUT,
     DEFAULT_IMPORT_API_TIMEOUT,
     DEFAULT_BATCH_UPDATE_TRANSACTIONS_API_TIMEOUT,
@@ -198,6 +199,15 @@ import type {
     ImportPresetMoveRequest,
     ImportPresetDeleteRequest
 } from '@/models/import_preset.ts';
+import type {
+    InboxItemInfoResponse,
+    InboxItemListRequest,
+    InboxItemListResponse,
+    InboxItemStatsResponse,
+    InboxItemIdRequest,
+    InboxItemDiscardRequest,
+    InboxItemKind
+} from '@/models/inbox.ts';
 
 import {
     getCurrentToken,
@@ -792,6 +802,33 @@ export default {
     },
     removeUnusedTransactionPicture: (req: TransactionPictureUnusedDeleteRequest): ApiResponsePromise<boolean> => {
         return axios.post<ApiResponse<boolean>>('v1/transaction/pictures/remove_unused.json', req);
+    },
+    getInboxItemStats: (): ApiResponsePromise<InboxItemStatsResponse> => {
+        return axios.get<ApiResponse<InboxItemStatsResponse>>('v1/inbox/items/stats.json');
+    },
+    getInboxItems: (req: InboxItemListRequest): ApiResponsePromise<InboxItemListResponse> => {
+        return axios.get<ApiResponse<InboxItemListResponse>>('v1/inbox/items/list.json', {
+            params: req
+        });
+    },
+    uploadInboxItem: ({ file, kind, note, onUploadProgress }: { file: File, kind: InboxItemKind, note?: string, onUploadProgress?: (event: { loaded: number, total?: number }) => void }): ApiResponsePromise<InboxItemInfoResponse> => {
+        return axios.postForm<ApiResponse<InboxItemInfoResponse>>('v1/inbox/items/upload.json', {
+            file: file,
+            kind: kind,
+            note: note
+        }, {
+            timeout: DEFAULT_INBOX_UPLOAD_API_TIMEOUT,
+            onUploadProgress: onUploadProgress
+        } as ApiRequestConfig);
+    },
+    discardInboxItem: (req: InboxItemDiscardRequest): ApiResponsePromise<boolean> => {
+        return axios.post<ApiResponse<boolean>>('v1/inbox/items/discard.json', req);
+    },
+    reopenInboxItem: (req: InboxItemIdRequest): ApiResponsePromise<boolean> => {
+        return axios.post<ApiResponse<boolean>>('v1/inbox/items/reopen.json', req);
+    },
+    deleteInboxItem: (req: InboxItemIdRequest): ApiResponsePromise<boolean> => {
+        return axios.post<ApiResponse<boolean>>('v1/inbox/items/delete.json', req);
     },
     getAllTransactionCategories: (): ApiResponsePromise<Record<number, TransactionCategoryInfoResponse[]>> => {
         return axios.get<ApiResponse<Record<number, TransactionCategoryInfoResponse[]>>>('v1/transaction/categories/list.json');

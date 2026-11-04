@@ -51,6 +51,8 @@ import TagGroupListPage from '@/views/mobile/tags/GroupListPage.vue';
 
 import TemplateListPage from '@/views/mobile/templates/ListPage.vue';
 
+import InboxListPage from '@/views/mobile/inbox/ListPage.vue';
+
 function asyncResolve(component: unknown): (ctx: Router.RouteCallbackCtx) => void {
     return function({ resolve }: { resolve: ({ component }: { component: unknown }) => void }): void {
         return resolve({
@@ -366,6 +368,11 @@ const routes: Router.RouteParameters[] = [
     {
         path: '/template/edit',
         async: asyncResolve(TransactionEditPage),
+        beforeEnter: [checkLogin]
+    },
+    {
+        path: '/inbox',
+        async: asyncResolve(InboxListPage),
         beforeEnter: [checkLogin]
     },
     {
