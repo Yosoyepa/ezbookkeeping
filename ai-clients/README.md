@@ -304,6 +304,7 @@ En `http://127.0.0.1:8080/desktop#/inbox` hay dos botones: **Subir extracto** (u
 Para subir desde la terminal o desde un script, sin abrir el navegador:
 
 ```powershell
+# Requisito: EBK_SECURITY_ENABLE_API_TOKEN=true en ai-clients/.env (ver abajo).
 # Token de tipo api (no el token MCP). Una vez:
 docker compose -f ai-clients/docker-compose.yml exec ezbookkeeping /ezbookkeeping/ezbookkeeping userdata user-session-new -n <usuario> -t api -e 31536000
 $env:EBK_API_TOKEN = '<token>'   # EBK_URL solo si el servidor no está en http://127.0.0.1:8080
@@ -316,7 +317,7 @@ En Git Bash, Linux o macOS: `ai-clients/scripts/upload-inbox.sh [--kind receipt|
 
 - El tipo se deduce de la extensión: imágenes (`jpg`, `jpeg`, `png`, `gif`, `webp`) → recibo; `csv`, `txt`, `ofx`, `qif`, `pdf`, `xlsx`, `xls` → extracto. `-Kind` / `--kind` lo fuerza.
 - Por cada ítem creado imprime su id y su tipo (`12 receipt`). Sale con código `0` si todo se subió, `1` si algún archivo falló (el motivo va a la salida de error) y `2` si falta el token o los argumentos. Nunca imprime el token.
-- Solo un token **api** puede llamar a la API desde un script; el token MCP solo vale para `/mcp`. El compose activa los tokens api con `EBK_SECURITY_ENABLE_API_TOKEN` (por defecto `true`). Si lo pones en `false`, `user-session-new -t api` responde «api token is not enabled».
+- Solo un token **api** puede llamar a la API desde un script; el token MCP solo vale para `/mcp`. Los tokens api vienen **desactivados** (`EBK_SECURITY_ENABLE_API_TOKEN=false`), porque dan acceso total a la cuenta. Para usar el script, pon `EBK_SECURITY_ENABLE_API_TOKEN=true` en `ai-clients/.env` y reinicia con `docker compose -f ai-clients/docker-compose.yml up -d`. Si no, `user-session-new -t api` responde «api token is not enabled». Si solo subes desde el navegador, déjalo en `false`.
 - El token api da acceso de lectura y escritura a toda la API de tu cuenta, igual que una sesión: protégelo como el token MCP y no lo guardes en el repositorio.
 
 ## Problemas frecuentes
