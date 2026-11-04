@@ -44,21 +44,24 @@ cd <destino>
 
 ```powershell
 Copy-Item ai-clients\.env.example ai-clients\.env
-# Edita ai-clients\.env y pon EBK_SECURITY_SECRET_KEY (el archivo explica cómo generarla)
+# Genera la clave y escríbela en ai-clients\.env sin mostrarla en pantalla:
+$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$k = -join ($b | ForEach-Object { $_.ToString('x2') })
+(Get-Content ai-clients\.env) -replace '^EBK_SECURITY_SECRET_KEY=.*', "EBK_SECURITY_SECRET_KEY=$k" | Set-Content ai-clients\.env
 docker compose -f ai-clients/docker-compose.yml up -d --build
 ```
 
-El build ejecuta las pruebas de upstream y tarda unos 6 minutos la primera vez. Docker necesita al menos 8 GB de memoria: el compose le da al Node del build un heap de 6 GB (`BUILD_NODE_OPTIONS`, que puedes cambiar con `EBK_BUILD_NODE_OPTIONS` en `.env`), porque el lint del frontend (`vue-tsc`) se queda sin memoria con el heap por defecto. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
+El build ejecuta las pruebas de upstream y tarda entre 6 y 12 minutos la primera vez. Docker necesita al menos 8 GB de memoria: el compose le da al Node del build un heap de 6 GB (`BUILD_NODE_OPTIONS`, que puedes cambiar con `EBK_BUILD_NODE_OPTIONS` en `.env`), porque el lint del frontend (`vue-tsc`) se queda sin memoria con el heap por defecto. El compose pasa `SKIP_TESTS=TestExchangeRatesApi` como argumento de build. Es un patrón de `go test -skip`, no un booleano: omite las 20 funciones `TestExchangeRatesApi*` de `pkg/exchangerates`, que llaman a APIs externas de tipos de cambio.
 
 Abre `http://127.0.0.1:8080` y comprueba que la aplicación carga.
 
-Tus datos viven en los volúmenes `ezbookkeeping-data`, `ezbookkeeping-storage` y `ezbookkeeping-log`. `docker compose ... down` no los borra. `docker compose ... down -v` sí borra los datos: no lo uses salvo que quieras perderlos.
+Tus datos viven en los volúmenes `ai-clients_ezbookkeeping-data`, `ai-clients_ezbookkeeping-storage` y `ai-clients_ezbookkeeping-log` (Compose les antepone el nombre del proyecto, `ai-clients`; compruébalo con `docker volume ls`). `docker compose ... down` no los borra. `docker compose ... down -v` sí borra los datos: no lo uses salvo que quieras perderlos.
 
 ## 2. Crear tu usuario y el token MCP
 
 ### Crear el usuario: mejor por la web
 
-**Recomendado: regístrate por la web.** Abre directamente `http://127.0.0.1:8080/desktop#/signup` (si el enlace «Crear una cuenta» de la pantalla de inicio no responde, esta ruta funciona igual). Los comandos necesitan categorías de **dos niveles** (categoría → subcategoría), y al registrarte por la web upstream te ofrece las categorías por defecto: en el paso 2 del registro **activa el interruptor «Utilizar categorías de transacciones predeterminadas»** (en inglés, «Use default transaction categories»). Viene **desactivado**; si lo dejas así, el usuario queda sin categorías. Las categorías por defecto ya tienen el formato de dos niveles. Un usuario creado con `user-add` queda **sin categorías**, y `user-add` no puede sembrarlas: solo recibe usuario, correo, apodo, contraseña y moneda. Por eso `user-add` es solo la alternativa.
+**Recomendado: regístrate por la web.** Abre directamente `http://127.0.0.1:8080/desktop#/signup` (si el enlace «Crear una cuenta» de la pantalla de inicio no responde, esta ruta funciona igual). Los comandos necesitan categorías de **dos niveles** (categoría → subcategoría), y al registrarte por la web upstream te ofrece las categorías por defecto: en el paso 1 cambia la **divisa predeterminada** a «Peso Colombiano» (viene en Euro, EUR, y las cuentas nuevas la heredan), y en el paso 2 **activa el interruptor «Utilizar categorías de transacciones predeterminadas»** (en inglés, «Use default transaction categories»). Viene **desactivado**; si lo dejas así, el usuario queda sin categorías. Las categorías por defecto ya tienen el formato de dos niveles. Un usuario creado con `user-add` queda **sin categorías**, y `user-add` no puede sembrarlas: solo recibe usuario, correo, apodo, contraseña y moneda. Por eso `user-add` es solo la alternativa.
 
 Para saber si el registro web está habilitado:
 
@@ -79,7 +82,7 @@ Remove-Item Env:EBK_NEW_PASSWORD
 
 **Sin interacción** (un script, una herramienta sin consola). `Read-Host` no funciona si no hay consola. Si la contraseña ya está en una variable del proceso (por ejemplo, la dejó tu gestor de secretos en `EBK_NEW_PASSWORD`), salta la lectura y ejecuta solo el segundo comando de arriba; `-e EBK_NEW_PASSWORD` la pasa al contenedor sin escribirla en la línea de comandos. No la generes ni la imprimas en el mismo comando: así queda en el historial y en la salida.
 
-> **Aviso.** La salida de `user-add` imprime el registro completo del usuario, con el hash de la contraseña y su sal (`[Password]` y `[Salt]`), y además la configuración completa del servidor (decenas de líneas). No compartas esa salida (ni la pegues en un chat, un issue o una conversación con un modelo).
+> **Aviso.** La salida de `user-add` (y la de los demás comandos `userdata`, como `user-session-revoke`) imprime el registro completo del usuario, con el hash de la contraseña y su sal (`[Password]` y `[Salt]`), y además la configuración completa del servidor (decenas de líneas). No compartas esa salida (ni la pegues en un chat, un issue o una conversación con un modelo).
 
 Como el usuario queda sin categorías, créalas a mano en la app antes de usar los comandos, en dos niveles (por ejemplo, categoría «Alimentación» con subcategoría «Supermercado»). Si solo creas categorías de primer nivel, el MCP las ignora y `query_all_transaction_categories` llega vacío (ver «Notas de upstream»).
 
@@ -87,7 +90,7 @@ Como el usuario queda sin categorías, créalas a mano en la app antes de usar l
 
 Los comandos no crean cuentas: créalas en la web antes del primer uso.
 
-1. Inicia sesión en `http://127.0.0.1:8080` y abre **Cuentas** → **Añadir**.
+1. Inicia sesión en `http://127.0.0.1:8080/desktop` y abre la lista de cuentas: el botón **Cuentas** de la barra superior es solo un icono, y la ruta directa es `http://127.0.0.1:8080/desktop#/account/list`. Pulsa **Añadir** en esa lista (no «Añadir transacción» de la barra lateral).
 2. Escribe el **nombre** (por ejemplo «Efectivo» o «Bancolombia Ahorros»).
 3. Elige la **categoría de cuenta**: es obligatoria. Usa «Efectivo» para el efectivo y «Cuentas de ahorros» para una cuenta bancaria.
 4. Elige la **divisa** «Peso Colombiano» (COP) y guarda.
@@ -193,7 +196,7 @@ claude -p "/recibos Procesa los recibos pendientes con una fila por recibo. No t
   --allowedTools mcp__ebk__query_all_accounts mcp__ebk__query_all_transaction_categories mcp__ebk__list_inbox_items mcp__ebk__get_inbox_item
 
 # Revisa la tabla. Después, paso 2: autoriza todo el servidor y pega la tabla aprobada en el prompt.
-claude -p "/recibos Aplica esta tabla que ya revisé, sin cambiar cuenta, categoría ni monto: <tabla>" `
+claude -p "/recibos Aplica esta tabla que ya revisé, sin cambiar cuenta, categoría ni monto. Confirmo: aplica con dry_run=false después del dry_run. Tabla: <tabla>" `
   --mcp-config .mcp.json --strict-mcp-config --add-dir "$env:USERPROFILE\.finanzas" --allowedTools "mcp__ebk"
 ```
 
