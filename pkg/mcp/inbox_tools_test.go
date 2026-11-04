@@ -67,10 +67,25 @@ func textOf(t *testing.T, result *testToolResult) map[string]any {
 	assert.GreaterOrEqual(t, len(result.Content), 1)
 	assert.Equal(t, "text", result.Content[0]["type"])
 
+	// get_inbox_item adds a line with --- and the content after the json
+	metadata, _, _ := strings.Cut(result.Content[0]["text"].(string), "\n---\n")
+
 	parsed := map[string]any{}
-	assert.Nil(t, stdjson.Unmarshal([]byte(result.Content[0]["text"].(string)), &parsed))
+	assert.Nil(t, stdjson.Unmarshal([]byte(metadata), &parsed))
 
 	return parsed
+}
+
+// bodyOf returns what follows the line with --- in the text block of the result
+func bodyOf(t *testing.T, result *testToolResult) string {
+	t.Helper()
+	assert.GreaterOrEqual(t, len(result.Content), 1)
+	assert.Equal(t, "text", result.Content[0]["type"])
+
+	_, body, found := strings.Cut(result.Content[0]["text"].(string), "\n---\n")
+	assert.True(t, found)
+
+	return body
 }
 
 func expenseArgs(amount string, comment string, time string) map[string]any {
@@ -207,6 +222,36 @@ func TestListInboxItems(t *testing.T) {
 
 	_, err = callTool(t, env, "list_inbox_items", map[string]any{"kind": "foto"})
 	assert.Equal(t, errs.ErrInboxItemKindInvalid, err)
+
+	// BUG-03: the numbers of the web api are accepted as an alias, as a string or as a number
+	for _, kind := range []any{"2", 2} {
+		result, err = callTool(t, env, "list_inbox_items", map[string]any{"kind": kind})
+		assert.Nil(t, err)
+		items = textOf(t, result)["items"].([]any)
+		assert.Equal(t, 1, len(items))
+		assert.Equal(t, "statement", items[0].(map[string]any)["kind"])
+	}
+
+	for _, kind := range []any{"1", 1} {
+		result, err = callTool(t, env, "list_inbox_items", map[string]any{"kind": kind})
+		assert.Nil(t, err)
+		items = textOf(t, result)["items"].([]any)
+		assert.Equal(t, 1, len(items))
+		assert.Equal(t, "receipt", items[0].(map[string]any)["kind"])
+	}
+
+	_, err = callTool(t, env, "list_inbox_items", map[string]any{"kind": 3})
+	assert.Equal(t, errs.ErrInboxItemKindInvalid, err)
+
+	// the schema still says that kind is a text with the two names
+	tools := map[string]*MCPTool{}
+
+	for _, tool := range Container.GetMCPTools() {
+		tools[tool.Name] = tool
+	}
+
+	schema, _ := stdjson.Marshal(tools["list_inbox_items"].InputSchema)
+	assert.Contains(t, string(schema), `"enum":["receipt","statement"]`)
 }
 
 func TestGetInboxItem_Receipt(t *testing.T) {
@@ -243,20 +288,34 @@ func TestGetInboxItem_TextStatements(t *testing.T) {
 
 	result, err := callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(statement.ItemId)})
 	assert.Nil(t, err)
-	assert.Equal(t, 2, len(result.Content))
-	assert.Equal(t, "text", result.Content[1]["type"])
-	assert.Equal(t, utf8Csv, result.Content[1]["text"])
+
+	// BUG-02: a single text block with the metadata, a line with --- and the complete content
+	assert.Equal(t, 1, len(result.Content))
+	text := result.Content[0]["text"].(string)
+	assert.True(t, strings.HasPrefix(text, `{"id":"`+utils.Int64ToString(statement.ItemId)+`"`))
+	assert.Contains(t, text, `"kind":"statement"`)
+	assert.Contains(t, text, `"original_file_name":"extracto.csv"`)
+	assert.Contains(t, text, `"size_bytes":`+utils.IntToString(len(utf8Csv)))
+	assert.True(t, strings.HasSuffix(text, "\n---\n"+utf8Csv))
+	assert.Equal(t, utf8Csv, bodyOf(t, result))
+
+	// Claude Code gives the model the structured content instead of the text blocks, so it has the content too, and the metadata does not repeat it
+	assert.Equal(t, utf8Csv, result.StructuredContent["content"])
+	assert.NotContains(t, strings.TrimSuffix(text, utf8Csv), `"content":`)
 
 	meta := textOf(t, result)
 	assert.Equal(t, "statement", meta["kind"])
 	assert.Equal(t, "text/csv", meta["mime_type"])
+	assert.Equal(t, true, meta["content_included"])
 	assert.NotEmpty(t, meta["download_url"])
 
 	// the file saved by many banks is in Windows-1252 and starts with a BOM
 	latin1 := env.NewStatement("txt", append([]byte{0xEF, 0xBB, 0xBF}, []byte("Descripci\xf3n;A\xf1o\n")...))
 	result, err = callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(latin1.ItemId)})
 	assert.Nil(t, err)
-	assert.Equal(t, "Descripción;Año\n", result.Content[1]["text"])
+	assert.Equal(t, 1, len(result.Content))
+	assert.Equal(t, "Descripción;Año\n", bodyOf(t, result))
+	assert.Equal(t, "Descripción;Año\n", result.StructuredContent["content"])
 }
 
 func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T) {
@@ -269,6 +328,9 @@ func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T)
 	result, err := callTool(t, env, "get_inbox_item", map[string]any{"id": utils.Int64ToString(statement.ItemId)})
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(result.Content))
+	assert.Equal(t, "text", result.Content[0]["type"])
+	assert.Contains(t, bodyOf(t, result), "embedded resource")
+	assert.Contains(t, bodyOf(t, result), "download_url")
 
 	resource := result.Content[1]
 	assert.Equal(t, "resource", resource["type"])
@@ -320,6 +382,7 @@ func TestGetInboxItem_BinaryStatementsHaveAResourceAndADownloadUrl(t *testing.T)
 	assert.Equal(t, float64(maxEmbeddedInboxFileSize+1), meta["size_bytes"])
 	assert.Contains(t, meta["content_note"], "10 MB")
 	assert.Contains(t, meta["content_note"], "download_url")
+	assert.Equal(t, meta["content_note"], bodyOf(t, result))
 
 	// without a root url there is no download url, and the text says so
 	env.Config.RootUrl = ""

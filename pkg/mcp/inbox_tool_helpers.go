@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json/v2"
+	"strings"
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
@@ -19,6 +20,32 @@ const (
 	inboxStatusProcessedName = "processed"
 	inboxStatusDiscardedName = "discarded"
 )
+
+// inboxKindArgument is the kind of an inbox item as a model writes it: the name (receipt, statement), or the number of the web api (1, 2) as a string or a number
+type inboxKindArgument string
+
+// UnmarshalJSON accepts a json string or a json number
+func (k *inboxKindArgument) UnmarshalJSON(data []byte) error {
+	value := strings.TrimSpace(string(data))
+
+	if value == "null" {
+		return nil
+	}
+
+	if strings.HasPrefix(value, "\"") {
+		var text string
+
+		if err := json.Unmarshal(data, &text); err != nil {
+			return err
+		}
+
+		value = strings.TrimSpace(text)
+	}
+
+	*k = inboxKindArgument(value)
+
+	return nil
+}
 
 func unmarshalToolArguments(callToolReq *MCPCallToolRequest, target any) error {
 	if callToolReq.Arguments == nil {

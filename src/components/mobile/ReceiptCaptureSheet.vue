@@ -54,6 +54,7 @@ import { InboxItemKind } from '@/models/inbox.ts';
 
 import { generateRandomUUID } from '@/lib/misc.ts';
 import { compressJpgImageByQuality } from '@/lib/ui/common.ts';
+import { uploadReceiptQueue } from '@/lib/receiptUploadQueue.ts';
 import logger from '@/lib/logger.ts';
 
 interface ReceiptPhoto {
@@ -114,11 +115,17 @@ function onReceiptSelected(event: Event): void {
     emit('update:show', true);
 }
 
+// the user cannot remove a photo while the queue is uploading
 function removePhoto(photoId: string): void {
     if (uploading.value) {
         return;
     }
 
+    dequeuePhoto(photoId);
+}
+
+// takes a photo out of the queue, also while uploading: the upload queue removes each photo once it is uploaded
+function dequeuePhoto(photoId: string): void {
     const index = photos.value.findIndex(photo => photo.id === photoId);
 
     if (index < 0) {
@@ -158,32 +165,16 @@ function upload(): void {
     uploadedCount.value = 0;
     uploadTotal.value = photos.value.length;
 
-    uploadNextPhoto();
-}
-
-// Photos are uploaded one by one. A failed photo stays in the list so the user can retry.
-function uploadNextPhoto(): void {
-    const photo = photos.value[0];
-
-    if (!photo) {
-        finishUpload();
-        return;
-    }
-
-    uploadFraction.value = 0;
-
-    compressReceipt(photo.file).then(file => {
-        return inboxStore.uploadItem({
-            file: file,
-            kind: InboxItemKind.Receipt,
-            onUploadProgress: (progress: number) => {
-                uploadFraction.value = progress;
-            }
-        });
+    // Photos are uploaded one by one. A failed photo stays in the list so the user can retry.
+    uploadReceiptQueue<ReceiptPhoto>({
+        getNextPhoto: () => photos.value[0],
+        uploadPhoto: uploadPhoto,
+        removePhoto: photo => dequeuePhoto(photo.id),
+        onPhotoUploaded: count => {
+            uploadedCount.value = count;
+        }
     }).then(() => {
-        removePhoto(photo.id);
-        uploadedCount.value++;
-        uploadNextPhoto();
+        finishUpload();
     }).catch(error => {
         uploading.value = false;
         uploadFraction.value = 0;
@@ -192,6 +183,20 @@ function uploadNextPhoto(): void {
             showToast(error.message || error);
         }
     });
+}
+
+function uploadPhoto(photo: ReceiptPhoto): Promise<void> {
+    uploadFraction.value = 0;
+
+    return compressReceipt(photo.file).then(file => {
+        return inboxStore.uploadItem({
+            file: file,
+            kind: InboxItemKind.Receipt,
+            onUploadProgress: (progress: number) => {
+                uploadFraction.value = progress;
+            }
+        });
+    }).then(() => {});
 }
 
 function finishUpload(): void {
