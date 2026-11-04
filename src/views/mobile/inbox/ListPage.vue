@@ -105,13 +105,8 @@ const uploading = ref<boolean>(false);
 const selectedItem = ref<InboxItem | null>(null);
 const showItemActions = ref<boolean>(false);
 
-const selectedTransactionIds = computed<string[]>(() => {
-    if (!selectedItem.value || selectedItem.value.status !== InboxItemStatus.Processed) {
-        return [];
-    }
-
-    return selectedItem.value.resultTransactionIds;
-});
+// a pending item with rows already created (partial progress) also links to its transactions, as the desktop does
+const selectedTransactionIds = computed<string[]>(() => selectedItem.value ? selectedItem.value.resultTransactionIds : []);
 
 // Loads one page of the current status. A response for a status that is no longer selected is ignored.
 function fetchPage(pageNumber: number): Promise<void> {

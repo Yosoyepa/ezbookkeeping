@@ -23,6 +23,9 @@ import (
 // maxEmbeddedInboxFileSize is the max size of a binary file (pdf, xlsx) embedded in the response, bigger files can only be downloaded
 const maxEmbeddedInboxFileSize = 10 * 1024 * 1024
 
+// inboxItemTextSeparator is the line between the metadata and the content in the text block of get_inbox_item
+const inboxItemTextSeparator = "---"
+
 // MCPGetInboxItemRequest represents all parameters of the get inbox item request
 type MCPGetInboxItemRequest struct {
 	Id string `json:"id" jsonschema_description:"Inbox item id (from list_inbox_items)"`
@@ -62,7 +65,7 @@ func (h *mcpGetInboxItemToolHandler) Name() string {
 
 // Description returns the description of the MCP tool
 func (h *mcpGetInboxItemToolHandler) Description() string {
-	return "Get an item of the inbox with its file: a receipt returns the image, a csv/txt/ofx/qif statement returns its text, a pdf/xlsx statement returns an embedded resource (only up to 10 MB, bigger files only have the url) and a temporary download url. Read the amounts, date and merchant only from the file, never guess them."
+	return "Get an item of the inbox with its file. The text of the response is the metadata as json (id, kind, original_file_name, size_bytes...), and for a statement a line with --- and then: the complete text of a csv/txt/ofx/qif statement, or a note for a pdf/xlsx statement. A receipt also returns the image; a pdf/xlsx statement also returns an embedded resource (only up to 10 MB, bigger files only have the temporary download_url). Read the amounts, date and merchant only from the file, never guess them."
 }
 
 // InputType returns the input type for the MCP tool request
@@ -123,20 +126,24 @@ func (h *mcpGetInboxItemToolHandler) Handle(c *core.WebContext, callToolReq *MCP
 		response.DownloadUrl = h.createDownloadUrl(currentConfig, user.Uid, itemId)
 	}
 
+	// The text of the response is a single block: the metadata and, after a line with ---, the content of a text statement or a note.
+	// Some clients (Claude Code) only deliver the first text block of a response to the model, so nothing the model needs goes in a second text block.
 	var fileBlock *MCPMixedContent
+	textAfterMetadata := ""
 
 	if item.Kind == models.INBOX_ITEM_KIND_RECEIPT {
 		fileBlock = NewMCPMixedImageContent(base64.StdEncoding.EncodeToString(data), mimeType)
+		response.ContentIncluded = true
 	} else if isTextStatement(item.FileExtension) {
-		fileBlock = NewMCPMixedTextContent(decodeStatementText(data))
+		textAfterMetadata = decodeStatementText(data)
+		response.ContentIncluded = true
 	} else if len(data) <= maxEmbeddedInboxFileSize {
 		fileBlock = NewMCPMixedBlobResourceContent(fmt.Sprintf("inbox://items/%d/%s", itemId, h.getResourceFileName(item)), mimeType, base64.StdEncoding.EncodeToString(data))
-	}
-
-	response.ContentIncluded = fileBlock != nil
-
-	if fileBlock == nil {
+		response.ContentIncluded = true
+		textAfterMetadata = h.getEmbeddedNote(response)
+	} else {
 		response.ContentNote = h.getNotEmbeddedNote(response)
+		textAfterMetadata = response.ContentNote
 	}
 
 	content, err := json.Marshal(response)
@@ -145,13 +152,30 @@ func (h *mcpGetInboxItemToolHandler) Handle(c *core.WebContext, callToolReq *MCP
 		return nil, nil, err
 	}
 
-	blocks := []*MCPMixedContent{NewMCPMixedTextContent(string(content))}
+	text := string(content)
+
+	if item.Kind != models.INBOX_ITEM_KIND_RECEIPT {
+		text += "\n" + inboxItemTextSeparator + "\n" + textAfterMetadata
+	}
+
+	blocks := []*MCPMixedContent{NewMCPMixedTextContent(text)}
 
 	if fileBlock != nil {
 		blocks = append(blocks, fileBlock)
 	}
 
 	return response, blocks, nil
+}
+
+// getEmbeddedNote tells what to do when the client cannot read the embedded file
+func (h *mcpGetInboxItemToolHandler) getEmbeddedNote(response *MCPGetInboxItemResponse) string {
+	note := "The file is attached to this response as an embedded resource."
+
+	if response.DownloadUrl != "" {
+		return note + " If you cannot read it, download it from download_url (valid 15 minutes, single use), e.g. with curl, and read it locally."
+	}
+
+	return note
 }
 
 // getNotEmbeddedNote explains why the file is not embedded in the response and how to get it

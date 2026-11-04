@@ -16,9 +16,9 @@ const maximumListInboxItemsLimit = 50
 
 // MCPListInboxItemsRequest represents all parameters of the list inbox items request
 type MCPListInboxItemsRequest struct {
-	Status string `json:"status,omitempty" jsonschema:"enum=pending,enum=processed,enum=discarded,enum=all,default=pending" jsonschema_description:"Status to filter by (optional, default pending)"`
-	Kind   string `json:"kind,omitempty" jsonschema:"enum=receipt,enum=statement" jsonschema_description:"Kind to filter by (optional, default both)"`
-	Limit  int32  `json:"limit,omitempty" jsonschema:"default=20" jsonschema_description:"Maximum number of items to return, newest first (optional, default 20, maximum 50)"`
+	Status string            `json:"status,omitempty" jsonschema:"enum=pending,enum=processed,enum=discarded,enum=all,default=pending" jsonschema_description:"Status to filter by (optional, default pending)"`
+	Kind   inboxKindArgument `json:"kind,omitempty" jsonschema:"enum=receipt,enum=statement" jsonschema_description:"Kind to filter by (optional, default both)"`
+	Limit  int32             `json:"limit,omitempty" jsonschema:"default=20" jsonschema_description:"Maximum number of items to return, newest first (optional, default 20, maximum 50)"`
 }
 
 // MCPInboxItemSummary defines the structure of an inbox item in a list
@@ -94,9 +94,9 @@ func (h *mcpListInboxItemsToolHandler) Handle(c *core.WebContext, callToolReq *M
 
 	switch request.Kind {
 	case "":
-	case inboxKindReceiptName:
+	case inboxKindReceiptName, "1":
 		kind = models.INBOX_ITEM_KIND_RECEIPT
-	case inboxKindStatementName:
+	case inboxKindStatementName, "2":
 		kind = models.INBOX_ITEM_KIND_STATEMENT
 	default:
 		return nil, nil, errs.ErrInboxItemKindInvalid
